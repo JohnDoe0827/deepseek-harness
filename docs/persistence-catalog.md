@@ -559,6 +559,23 @@ Source: [`packages/core/session/src/types.ts:309`](../packages/core/session/src/
 
 Source: [`packages/core/session/src/types.ts:304`](../packages/core/session/src/types.ts)
 
+### `rheostat/*`
+
+<a id="rheostatposition--log-only"></a>
+
+#### `rheostat/position` — log-only
+
+```ts persistence-catalog
+/**
+ * The style-dial position in force from this point on: log-only,
+ * non-surface, whole-value replace. The last `rheostat/position` wins; a
+ * log with none folds to {@link DEFAULT_POSITION}.
+ */
+'rheostat/position': { position: number }
+```
+
+Source: [`packages/context/rheostat/src/index.ts:32`](../packages/context/rheostat/src/index.ts)
+
 ### `sandbox/*`
 
 <a id="sandboxmode--log-only"></a>

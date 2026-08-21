@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/context/rheostat/README.md
-README.md: 0d28e4a25205c426925ec94fc7d56f1210f7a4bb
-README.zh.md: ffc4027405496a1e6a92540e541b7599c9d5ea8e
+README.md: 70d2b19ddb73ec1f0844ae71c9d59d1e568847d9
+README.zh.md: ba64f537e70e341048330561e48efdf93859da4e

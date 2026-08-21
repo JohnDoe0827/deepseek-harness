@@ -49,22 +49,14 @@
 
 #### What the model sees
 
-每个携带 agent 的请求都有一个该片段，由折叠（或挂起）的位置按会话语言渲染：`detectLanguage` 根据最近一条用户消息分类（中文字符占优→中文，拉丁字符占优→英文），尚无用户消息时默认中文。三个区间的逐字正文在 [src/index.ts](src/index.ts) 的 `styleText` 中：极简 0 区、均衡中间区、饱满 1 区分别替换下面模板中的 `{position}` 与 `{mode label}` 占位符，并追加各自的指导句。
+每个携带 agent 的请求都有一个该片段，由折叠（或挂起）的位置渲染。三个区间的逐字正文在 [src/index.ts](src/index.ts) 的 `styleText` 中：极简 0 区、均衡中间区、饱满 1 区分别替换下面模板中的 `{position}` 与 `{mode label}` 占位符，并追加各自的指导句。
 
-##### Verbatim template（中文）
+##### Verbatim template
 
 ```markdown
 滑动变阻器（style dial）位于 {position}，处于 {mode label}。
 {band guidance}
 用户可以用 /rheostat <0..1> 滑动它，你也可以调用 rheostat_set 工具。
-```
-
-##### Verbatim template（英文）
-
-```markdown
-The style dial (滑动变阻器) is at {position} — {mode label}.
-{band guidance}
-The user can slide it with /rheostat <0..1>, and you can call the rheostat_set tool.
 ```
 
 ##### Rendered example at position 0.00
@@ -73,10 +65,10 @@ The user can slide it with /rheostat <0..1>, and you can call the rheostat_set t
 滑动变阻器（style dial）位于 0.00，处于 0 模式 · 极简静默。 调整回答风格：只给结论，不给铺垫；能用一句话绝不用两句；删掉寒暄、修饰与重复；列表尽量短。 像 0 一样安静、克制、留白。用户可以用 /rheostat <0..1> 滑动它，你也可以调用 rheostat_set 工具。
 ```
 
-##### Rendered English example at position 1.00
+##### Rendered example at position 1.00
 
 ```markdown
-The style dial (滑动变阻器) is at 1.00 — 1 mode · Expressive & Lively. Adjust your response style: expand freely; add background, detail, and examples unprompted; be warm and present; enthusiasm, emphasis, and rhythm are welcome; light up every thought and never go missing. Be as bright, loud, and rich as 1. The user can slide it with /rheostat <0..1>, and you can call the rheostat_set tool.
+滑动变阻器（style dial）位于 1.00，处于 1 模式 · 饱满热烈。 调整回答风格：尽情展开；主动补充背景、细节和例子；表达有温度、有存在感；可以热情、夸张、有节奏；把每个想法点亮，绝不缺席。 像 1 一样明亮、响亮、内容丰富。用户可以用 /rheostat <0..1> 滑动它，你也可以调用 rheostat_set 工具。
 ```
 
 #### Token effect

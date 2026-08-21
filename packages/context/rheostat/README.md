@@ -15,7 +15,7 @@ The dial is a number in [0, 1], defaulting to the neutral middle 0.5. Every requ
 The position is logged as a `rheostat/position` session event (whole-value replace, last write wins), so resume and fork restore it without a live mirror. Anyone can slide it:
 
 - the model calls `rheostat_set(position)` and reads `rheostat_get()` (the prompt section already states the position, so the get tool exists for programmatic consumers);
-- the user runs the `/rheostat [<0..1>]` command (bare `/rheostat` reads the position).
+- the user runs the `/rheostat [off|on|<0..1>]` command (bare `/rheostat` reads the state; `/rheostat off` turns the dial off until the next slide, which auto-enables it).
 
 ## Same prompt, different positions
 

@@ -561,6 +561,23 @@ Source: [`packages/core/session/src/types.ts:304`](../packages/core/session/src/
 
 ### `rheostat/*`
 
+<a id="rheostatactive--log-only"></a>
+
+#### `rheostat/active` — log-only
+
+```ts persistence-catalog
+/**
+ * Whether the style dial is on from this point on: log-only,
+ * non-surface, whole-value replace. The last `rheostat/active` wins; a
+ * log with none folds to {@link DEFAULT_ACTIVE}. The dial is on by
+ * default; `/rheostat off` turns it off, and sliding the dial turns it
+ * back on.
+ */
+'rheostat/active': { active: boolean }
+```
+
+Source: [`packages/context/rheostat/src/index.ts:40`](../packages/context/rheostat/src/index.ts)
+
 <a id="rheostatposition--log-only"></a>
 
 #### `rheostat/position` — log-only

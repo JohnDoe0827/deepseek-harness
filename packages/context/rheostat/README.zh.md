@@ -15,7 +15,7 @@
 位置以 `rheostat/position` 会话事件落盘（整值替换，最后一次写入生效），因此恢复与派生（fork）都能还原它，无需实时镜像。任何人都可以滑动它：
 
 - 模型调用 `rheostat_set(position)` 滑动、`rheostat_get()` 读取（提示片段本身已声明位置，get 工具是给程序化消费者用的）；
-- 用户运行 `/rheostat [<0..1>]` 命令（裸 `/rheostat` 读取位置）。
+- 用户运行 `/rheostat [off|on|<0..1>]` 命令（裸 `/rheostat` 读取状态；`/rheostat off` 关闭变阻器，直到下一次滑动自动重新开启）。
 
 ## 同一提示词，不同阻值
 

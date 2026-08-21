@@ -13,7 +13,7 @@ A user wanted a playful, persistent "mode" control in the harness: a dial that s
 **A new `dsh-rheostat` package (`packages/context/rheostat`) mounting a per-session style dial in the base bundle.** The dial is one number in [0, 1], defaulting to 0.5. It is:
 
 - **Durable session state** — logged as a `rheostat/position` session event (log-only, non-surface, whole-value replace, last write wins), so resume and fork restore it and the session log stays the single source of truth; the invariant companion rejects incoherent positions in the log.
-- **Model-visible** — a `rheostat:style` prompt section (order 40, after the persona at 0 and before plan-mode guidance at 50) renders the folded position and the style instruction for its band: ≤ 0.25 terse 0 mode, ≥ 0.75 expressive 1 mode, in between a blend. Plan-mode rules still override the dial when a plan is under review because they render later.
+- **Model-visible** — a `rheostat:style` prompt section (order 40, after the persona at 0 and before plan-mode guidance at 50) renders the folded position and the style instruction for its band (≤ 0.25 terse 0 mode, ≥ 0.75 expressive 1 mode, in between a blend) in the conversation's language — `detectLanguage` classifies the most recent user message as Chinese or English, defaulting to Chinese before any user message exists. Plan-mode rules still override the dial when a plan is under review because they render later.
 - **Controlled by the model** — `rheostat_set(position)` slides the dial (rejecting out-of-range positions loud), `rheostat_get()` reads it for programmatic consumers; both require an owning agent session.
 - **Controlled by the user** — the `/rheostat [<0..1>]` command slides it (bare `/rheostat` reads it).
 

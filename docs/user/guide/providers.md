@@ -16,6 +16,8 @@ Keys are write-only. The page receives a redacted descriptor after saving, never
 
 Choose **Add provider**, select a provider such as Anthropic or OpenAI, enter its API key, and save. The installed catalog supplies the endpoint, protocol, and model list.
 
+**OpenCode Go** (the OpenCode Zen Go subscription) is one of the catalog providers: it serves its coding lineup (`opencode-go/*` models such as `deepseek-v4-flash`, `kimi-k3`, and `qwen3.6-plus`) on an OpenAI-compatible endpoint. The card's key is stored under the `OPENCODE_GO_API_KEY` credential reference by default; a user-settings `llm-opencode-go:` section can rename the reference, point the endpoint at another base URL, or narrow the model catalog, and the change reaches the next request without a restart.
+
 Providers with native authentication need their native credentials instead. Bedrock, Vertex, Azure, and Codex use AWS credentials and a region, an ADC project, an `api-version`, and OAuth respectively; filling only the API-key field does not configure them.
 
 ## Add a custom provider
@@ -95,4 +97,4 @@ If a saved default names a provider that was deleted, the composer displays **Se
 
 ## Advanced configuration
 
-The generated [plugin configuration catalog](../../config-catalog.md) lists every supported field and default. The [`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.md) and [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.md) references own direct `settings.yaml` configuration, catalog resolution, reasoning controls, credentials, and adapter errors.
+The generated [plugin configuration catalog](../../config-catalog.md) lists every supported field and default. The [`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.md), [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.md), and [`dsh-llm-opencode-go`](../../../packages/llm/llm-opencode-go/README.md) references own direct `settings.yaml` configuration, catalog resolution, reasoning controls, credentials, and adapter errors.

@@ -134,11 +134,17 @@ export function catalogProvider(provider: string): Provider | undefined {
 }
 
 /**
- * Every provider route the installed pi-ai catalog ships.
+ * Every provider route the installed pi-ai catalog ships, minus the routes a
+ * first-class harness adapter owns. `opencode-go` is excluded: the native
+ * `dsh-llm-opencode-go` adapter registers that route and its configurable
+ * provider entry, and the single-slot llm directory rejects a second
+ * declaration (see the OpenCode Go provider Agent Note). A user who prefers
+ * the pi-ai implementation can still declare `opencode-go` as a hand-written
+ * profile; the directory collision keeps the native entry serving.
  * @returns the catalog provider ids.
  */
 export function catalogProviderIds(): readonly string[] {
-  return getBuiltinProviders()
+  return getBuiltinProviders().filter(provider => provider !== 'opencode-go')
 }
 
 /**

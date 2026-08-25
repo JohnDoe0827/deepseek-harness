@@ -7,7 +7,8 @@
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
+ * every family, DeepSeek's id/name/context-window model catalog — shared by
+ * opencode-go, whose direct-fetch catalog is the same shape — and the
  * display name and wire protocol of a pi-ai route the adapter does not ship —
  * the two fields the create card asked that route for, editable here for the
  * same reason).
@@ -38,10 +39,13 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'opencode-go' | 'pi-ai' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
+
+/** The public OpenCode Go endpoint shown as the opencode-go base-URL placeholder. */
+const OPENCODE_GO_PUBLIC_BASE_URL = 'https://opencode.ai/zen/go/v1'
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -124,6 +128,7 @@ export function pathOps(
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
+  if (ns === 'llm-opencode-go') return 'opencode-go'
   if (ns === 'llm-pi-ai') return 'pi-ai'
   return 'unknown'
 }
@@ -331,7 +336,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'opencode-go' | 'pi-ai'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
@@ -414,7 +419,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
                   ? DEEPSEEK_PUBLIC_BASE_URL
-                  : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                  : family === 'opencode-go'
+                    ? OPENCODE_GO_PUBLIC_BASE_URL
+                    : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
                 onChange={(event) => {
@@ -450,7 +457,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}
-            {family === 'deepseek'
+            {family === 'deepseek' || family === 'opencode-go'
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}

@@ -153,6 +153,18 @@ describe('hand-declared providers', () => {
     expect(directory.find(entry => entry.provider === 'deepseek')?.declared).toBe(false)
   })
 
+  it('yields the opencode-go route to the native adapter', async () => {
+    // The single-slot llm directory rejects a second `opencode-go`
+    // declaration, so the pi-ai catalog does not offer the route; the native
+    // dsh-llm-opencode-go adapter owns it (see the OpenCode Go provider Agent
+    // Note). A hand-written pi-ai profile for the route still resolves, and a
+    // directory collision would keep the native entry serving.
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {})
+    expect(ctx.llm.listConfigurableProviders().some(entry => entry.provider === 'opencode-go')).toBe(false)
+  })
+
   it('sizes a model the catalog cannot describe from the route\u2019s own fallbacks', () => {
     const resolved = resolveProfiles({
       'acme-gateway': {

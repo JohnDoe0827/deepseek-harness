@@ -1333,6 +1333,93 @@ describe('ModelsSection', () => {
   })
 })
 
+describe('opencode-go curated editor', () => {
+  const OpenCodeGoConfig = Schema.object({
+    baseURL: Schema.string().pattern(/^https:\/\//),
+    defaultContextWindow: Schema.number().step(1).min(1),
+    models: Schema.array(Schema.object({
+      id: Schema.string().required(),
+      name: Schema.string(),
+      description: Schema.string(),
+      contextWindow: Schema.number().step(1).min(1),
+    })).default([
+      { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', description: '', contextWindow: 1_000_000 },
+      { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', description: '', contextWindow: 1_000_000 },
+      { id: 'kimi-k3', name: 'Kimi-K3', description: '', contextWindow: 1_000_000 },
+      { id: 'qwen3.6-plus', name: 'Qwen3.6-Plus', description: '', contextWindow: 1_000_000 },
+    ]),
+  })
+
+  const DEFAULT_OPENCODE_GO_MODELS = [
+    { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: 1_000_000 },
+    { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
+    { id: 'kimi-k3', name: 'Kimi-K3', contextWindow: 1_000_000 },
+    { id: 'qwen3.6-plus', name: 'Qwen3.6-Plus', contextWindow: 1_000_000 },
+  ]
+
+  function openCodeGoNamespace(): SettingsNamespaceView {
+    return {
+      ns: 'llm-opencode-go',
+      schema: JSON.parse(JSON.stringify(OpenCodeGoConfig.toJSON())) as unknown,
+      value: {
+        baseURL: 'https://base',
+        defaultContextWindow: 1_000_000,
+        models: DEFAULT_OPENCODE_GO_MODELS,
+      },
+      base: { defaultContextWindow: 1_000_000, models: DEFAULT_OPENCODE_GO_MODELS },
+      user: { baseURL: 'https://base' },
+      applies: 'live',
+      secrets: [],
+      revision: 0,
+    }
+  }
+
+  async function mountOpenCodeGoCard() {
+    const scripted = scriptedFace({ mutate: vi.fn(() => Promise.resolve(ok(openCodeGoNamespace()))) })
+    const { mutate } = scripted
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(
+      <ProviderEditor
+        provider="opencode-go"
+        displayName="OpenCode Go"
+        namespace={openCodeGoNamespace()}
+        settingsPath={[]}
+        api={scripted.face as never}
+        t={t}
+        readOnly={false}
+        onClose={vi.fn()}
+      />,
+    )
+    return mutate
+  }
+
+  it('renders a curated editor with base URL and inherited models instead of the settings.yaml hint', async () => {
+    await mountOpenCodeGoCard()
+    // The advancedHint ("other fields live in settings.yaml") must not be the
+    // whole card: the opencode-go family now gets a real editor.
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    fireEvent.click(screen.getByText(en.customized))
+    const baseURL = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
+    expect(baseURL.placeholder).toBe('https://opencode.ai/zen/go/v1')
+    expect(screen.getAllByLabelText(new RegExp(en.modelId)).map(input => (input as HTMLInputElement).value))
+      .toEqual(DEFAULT_OPENCODE_GO_MODELS.map(m => m.id))
+  })
+
+  it('applies an edited opencode-go base URL as a path op against llm-opencode-go', async () => {
+    const mutate = await mountOpenCodeGoCard()
+    fireEvent.click(screen.getByText(en.customized))
+    const baseURL = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
+    fireEvent.change(baseURL, { target: { value: 'https://next2' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      ns: 'llm-opencode-go',
+      ops: [{ op: 'set', path: ['baseURL'], value: 'https://next2' }],
+      expectedRevision: 0,
+    })
+  })
+})
+
 describe('apiKeyFailure', () => {
   it('treats a blank field as no failure — it means keep the stored key', () => {
     expect(apiKeyFailure('')).toBeUndefined()

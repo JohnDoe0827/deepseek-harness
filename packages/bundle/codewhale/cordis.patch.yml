@@ -1,0 +1,39 @@
+# The dsh-codewhale bundle patch: the CodeWhale-style layer for a profile,
+# applied as ONE insert over the rows dsh-base already mounted. Later bundle
+# layers and the user's profile cordis.patch.yml address these rows by id.
+#
+# The constitution file path is resolved against each session's workspace
+# root, so one deployment value serves every workspace; the snapshot store
+# lives under the Harness home; the fleet ships one default reviewer role
+# routed through the session's default provider/model (roles may name their
+# own provider/model in a profile or user patch).
+
+- insert:
+    - id: codewhale-constitution
+      name: '@deepseek-ai/dsh-codewhale-constitution'
+      config:
+        file: codewhale.constitution.yml
+
+    - id: codewhale-snapshot
+      name: '@deepseek-ai/dsh-codewhale-snapshot'
+      config:
+        dir: !!js dshHomePath('codewhale', 'snapshots')
+        excludes:
+          - .git
+          - node_modules
+          - dist
+          - build
+          - .dsh
+
+    - id: codewhale-fleet
+      name: '@deepseek-ai/dsh-codewhale-fleet'
+      config:
+        maxRounds: 2
+        maxTranscriptChars: 8000
+        roles:
+          - id: reviewer
+            label: Reviewer
+            instructions: >-
+              Review the agent's response against the task for correctness,
+              completeness, and test coverage. Verdict "fix" must name the
+              concrete problems to address.

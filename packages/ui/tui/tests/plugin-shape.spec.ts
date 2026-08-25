@@ -16,7 +16,7 @@ describe('dsh-tui plugin export shape', () => {
       'agents',
       'sessions',
       'commands',
-      'userInteraction',
+      'userQuestions',
       'tools',
       'llm',
       'systemPrompt',

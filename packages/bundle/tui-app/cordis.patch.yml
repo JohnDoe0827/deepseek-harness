@@ -100,6 +100,7 @@
     # same launcher-owned identity rather than restating one.
     - id: tui
       name: '@deepseek-ai/dsh-tui'
+      inject: [tuiStartup]
       config:
         sessionId: !!js ctx.tuiStartup.sessionId
         showReasoning: true

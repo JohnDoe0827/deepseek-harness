@@ -563,6 +563,30 @@ const SERVICE_ROLES: ServiceRole[] = [
     consumers: ['tool-cordis'],
     note: 'Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport.',
   },
+  {
+    key: 'tui',
+    pkg: 'tui',
+    title: 'Interactive terminal surface',
+    mode: 'core',
+    consumers: ['tui-app'],
+    note: 'Owns the interactive TUI presentation and input loop: transcript, tool cards, status, overlays, and the editor; plugins extend it through overlay and prompt registrations.',
+  },
+  {
+    key: 'tuiPrompt',
+    pkg: 'tui',
+    title: 'Live prompt value registry',
+    mode: 'core',
+    consumers: ['tui'],
+    note: 'Context-global mutable values interpolated by TUI prompt templates, with coalesced render notifications on any registration, mutation, or disposal.',
+  },
+  {
+    key: 'tuiResumeHost',
+    pkg: 'tui',
+    title: 'Resume handoff host boundary',
+    mode: 'core',
+    consumers: ['tui'],
+    note: 'Process-lifecycle owner used by the shipped CLI for an atomic resume handoff: disposes the current app and replaces it with a runtime for the selected session.',
+  },
 ]
 
 function generatedHeader(title: string): string[] {

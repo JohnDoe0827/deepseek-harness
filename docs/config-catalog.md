@@ -465,6 +465,91 @@ export interface Config {
 
 Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../packages/code-runtime/code-runtime-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-codewhale-constitution"></a>
+
+## `@deepseek-ai/dsh-codewhale-constitution`
+
+Requires: `systemPrompt` · `fs`
+
+```ts config-catalog
+/** Deployment-owned constitution file location. */
+export interface Config {
+  /**
+   * Constitution file path, resolved against each session's working
+   * directory; absolute paths are used as-is.
+   */
+  file: string
+}
+```
+
+Source: [`packages/codewhale/constitution/src/index.ts:42`](../packages/codewhale/constitution/src/index.ts)
+
+<a id="deepseek-aidsh-codewhale-fleet"></a>
+
+## `@deepseek-ai/dsh-codewhale-fleet`
+
+Requires: `llm` · `agentDefaultModel`
+
+```ts config-catalog
+/** Deployment-owned fleet configuration. */
+export interface Config {
+  /** The reviewer roles, in review order. */
+  roles: FleetRoleConfig[]
+  /**
+   * Maximum review rounds per run; a run whose fixes never clear this many
+   * reviews closes `fixes-exhausted`.
+   */
+  maxRounds: number
+  /** Byte cap for the assistant transcript sent to a reviewer. */
+  maxTranscriptChars: number
+}
+
+/** One reviewer role of a fleet: an independent model route plus standing instructions. */
+export interface FleetRoleConfig {
+  /** Stable role id used in `fleet/review` events and diagnostics. */
+  readonly id: string
+  /** Human-readable role name shown in status and summaries. */
+  readonly label?: string
+  /** Standing instructions for this reviewer role. */
+  readonly instructions: string
+  /** Provider route; defaults to the session's default route when omitted. */
+  readonly provider?: string
+  /** Model id on the provider; defaults to the session's default route when omitted. */
+  readonly model?: string
+  /** Reasoning tier for the resolved route; must be supported by the model. */
+  readonly reasoningEffort?: string
+}
+```
+
+Source: [`packages/codewhale/fleet/src/index.ts:50`](../packages/codewhale/fleet/src/index.ts)
+
+<a id="deepseek-aidsh-codewhale-snapshot"></a>
+
+## `@deepseek-ai/dsh-codewhale-snapshot`
+
+```ts config-catalog
+/** Deployment-owned snapshot store configuration. */
+export interface Config {
+  /**
+   * Absolute snapshot store root; per-session copies live under
+   * `<dir>/<sessionId>/<seq>/`.
+   */
+  dir: string
+  /**
+   * Workspace entries to skip: an entry is excluded when any path segment
+   * equals an entry, or the relative path starts with `<entry>/`.
+   */
+  excludes: string[]
+  /**
+   * Optional workspace root override; default is each session's working
+   * directory (`SessionHeader.cwd`), falling back to the process cwd.
+   */
+  workspace?: string
+}
+```
+
+Source: [`packages/codewhale/snapshot/src/index.ts:33`](../packages/codewhale/snapshot/src/index.ts)
+
 <a id="deepseek-aidsh-compaction-basic"></a>
 
 ## `@deepseek-ai/dsh-compaction-basic`
@@ -890,6 +975,57 @@ export interface DeepSeekCatalogModel {
 Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
 Source: [`packages/llm/llm-deepseek/src/index.ts:62`](../packages/llm/llm-deepseek/src/index.ts)
+
+<a id="deepseek-aidsh-llm-opencode-go"></a>
+
+## `@deepseek-ai/dsh-llm-opencode-go`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-opencode-go` settings-section shape. Every field is optional in
+ * yml: a missing API key resolves through {@link Config.apiKeyEnv} at each
+ * request (a request without any key fails with `MISSING_CREDENTIAL`, not at
+ * plugin load), and an omitted `maxTokens` leaves the provider's own output
+ * cap in force.
+ */
+export interface Config {
+  /** Credential reference (environment-variable name) resolved per request; defaults to `OPENCODE_GO_API_KEY`. */
+  apiKeyEnv?: string
+  /** Endpoint base; falls back to $OPENCODE_GO_BASE_URL from a trusted environment layer, then the public API. */
+  baseURL?: string
+  /** Default per-request output cap; explicit request values and model caps win. */
+  maxTokens?: number
+  /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
+  defaultContextWindow?: number
+  /** Advisory models shown by discovery consumers; defaults to the OpenCode Go catalog. */
+  models?: OpenCodeGoCatalogModel[]
+  /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/** One optional model entry advertised by the direct-fetch adapter. */
+export interface OpenCodeGoCatalogModel {
+  /** Wire model id accepted by the configured endpoint. */
+  id: string
+  /** Selector label; defaults to {@link id}. */
+  name?: string
+  /** Optional selector detail for deployments with similar model variants. */
+  description?: string
+  /** Known combined request/response context capacity; omitted when deployment metadata is unavailable. */
+  contextWindow?: number
+  /** Per-request output cap for this model; omission falls back to the profile's {@link OpenCodeGoConnectionOptions.maxTokens}. */
+  maxTokens?: number
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-opencode-go/src/index.ts:73`](../packages/llm/llm-opencode-go/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -2796,6 +2932,87 @@ export type ToolPresentationMode = 'native' | 'code' | 'both'
 
 Source: [`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
 
+<a id="deepseek-aidsh-tui"></a>
+
+## `@deepseek-ai/dsh-tui`
+
+Requires: `agents` · `sessions` · `commands` · `userInteraction` · `tools` · `llm` · `systemPrompt` · `tokenMeter` · `tuiPrompt`
+
+```ts config-catalog
+/** Serializable plugin configuration. */
+export interface Config extends TuiConfig {
+  /** Banner subtitle line. When absent, the banner has no subtitle and sweeps in on start. */
+  welcome?: string
+  /** Exact shared agent/session identity driven by this terminal. Defaults to `main`. */
+  sessionId?: string
+  /**
+   * Skill name auto-invoked as this session's first user turn, exactly as if
+   * the user typed `/skill:<name>`. Set only by a launcher for a fresh
+   * skill-guided session (`dsh migrate`/`dsh upgrade`); absent
+   * leaves the first turn to the user.
+   */
+  initialSkill?: string
+}
+
+/** Interaction and presentation settings for the pi-tui terminal mode. */
+export interface TuiConfig {
+  /** Render model reasoning blocks. */
+  showReasoning?: boolean
+  /** Maximum tool-card body lines retained in its collapsed head/tail preview. */
+  maxToolOutputLines?: number
+  /** Maximum added and removed lines explored while deriving an exact line diff. */
+  maxDiffEditLength?: number
+  /** Maximum options visible at once in a user-question panel. */
+  maxQuestionOptions?: number
+  /** Maximum models visible at once in the model selector. */
+  maxModelOptions?: number
+  /** Maximum sessions visible at once in the resume selector. */
+  maxResumeOptions?: number
+  /** Maximum concurrent cold projection reads in one resume scan. */
+  resumeScanConcurrency?: number
+  /** User-question panel width in terminal columns, clamped to the terminal. */
+  questionDialogWidth?: number
+  /** User-question panel maximum height in terminal rows. */
+  questionDialogMaxHeight?: number
+  /** Model-selector width in terminal columns. */
+  modelDialogWidth?: number
+  /** Model-selector maximum height in terminal rows. */
+  modelDialogMaxHeight?: number
+  /** Transcript-details selector width in terminal columns. */
+  detailsDialogWidth?: number
+  /** Maximum fuzzy file candidates displayed for one `@` query. */
+  fileSearchMaxResults?: number
+  /** Maximum paths retained in one `@` workspace index. */
+  fileSearchMaxEntries?: number
+  /** Directory basenames excluded from `@` traversal and completion. */
+  fileSearchExcludedDirectories?: string[]
+  /** Show the terminal's hardware cursor at the pi editor's IME marker. */
+  showHardwareCursor?: boolean
+  /** Color and prompt-template settings. */
+  theme?: TuiThemeConfig
+  /** Terminal window title while the UI is mounted; a logged session title prefixes it. */
+  title?: string
+}
+
+/** Theme and prompt-template settings for the pi-tui terminal mode. */
+export interface TuiThemeConfig {
+  /** Apply the built-in ANSI color palette. */
+  color?: boolean
+  /** Paint the startup banner with the 24-bit DeepSeek brand gradient. */
+  truecolor?: boolean
+  /** Left-aligned template on the row above the editor. */
+  leftPrompt?: string
+  /** Right-aligned template on the row above the editor. */
+  rightPrompt?: string
+  /** Template used as the editor's first-line prefix. */
+  inputPrompt?: string
+  /** Static placeholder shown in an empty editor while the agent is running. */
+  inputPlaceholder?: string
+}
+```
+
+Source: [`packages/ui/tui/src/config.ts:129`](../packages/ui/tui/src/config.ts)
+
 <a id="deepseek-aidsh-typert-loader"></a>
 
 ## `@deepseek-ai/dsh-typert-loader`
@@ -3073,6 +3290,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
+- `@deepseek-ai/dsh-rheostat` — requires `tools` · `systemPrompt` ([`packages/context/rheostat/src/index.ts`](../packages/context/rheostat/src/index.ts))
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
 - `@deepseek-ai/dsh-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))
@@ -3088,6 +3306,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))
 - `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
+- `@deepseek-ai/dsh-tui-app` ([`packages/bundle/tui-app/src/index.ts`](../packages/bundle/tui-app/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
@@ -3130,6 +3349,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-client-web` ([`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts))
 - `@deepseek-ai/dsh-client-web-react` ([`packages/client/web-react/src/index.ts`](../packages/client/web-react/src/index.ts))
 - `@deepseek-ai/dsh-cmdline` ([`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts))
+- `@deepseek-ai/dsh-codewhale` ([`packages/bundle/codewhale/src/index.ts`](../packages/bundle/codewhale/src/index.ts))
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
 - `@deepseek-ai/dsh-hook-protocol` ([`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts))
 - `@deepseek-ai/dsh-launch-environment` ([`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts))

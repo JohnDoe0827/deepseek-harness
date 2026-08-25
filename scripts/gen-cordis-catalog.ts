@@ -100,6 +100,9 @@ export const SERVICE_PAGE: Record<string, string> = {
   tokenMeter: 'token-meter.md',
   toolResultPruner: 'compaction.md',
   tools: 'tools.md',
+  tui: 'tui.md',
+  tuiPrompt: 'tui.md',
+  tuiResumeHost: 'tui.md',
   typert: 'typert.md',
   typertGateway: 'typert.md',
   userQuestions: 'user-questions.md',
@@ -134,6 +137,9 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   launcherSessionQueryPath: 'not a service: launcher-provided boot-context value (string | undefined) — packages/session-query/session-query-sqlite/README.md owns this launcher contract',
   dshHomePath: 'not a service: boot-provided root accessor function (typeof dshHomePath | undefined) for Loader !!js config expressions — packages/boot/app-boot/README.md owns the boot contract',
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
+  mainSessionId: 'not a service: launcher-provided boot-context value (MainSessionIdentity | undefined) — packages/ui/tui/README.md owns this launcher contract',
+  tuiGoodbyeMessage: 'not a service: launcher-provided boot-context value (string | undefined) — packages/ui/tui/README.md owns this launcher contract',
+  tuiInitialSkill: 'not a service: launcher-provided boot-context value (string | undefined) — packages/ui/tui/README.md owns this launcher contract',
   connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
   appShell: 'client-side interface-typed browser service — packages/client/web/README.md owns the API',
   settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
@@ -578,6 +584,10 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   WorkflowAgentEndInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowAgentInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowResultInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
+  TuiOverlayRequest: 'overlay presentation contract is owned by packages/ui/tui/src/extension/types.ts',
+  TuiOverlaySession: 'overlay lifecycle handle is owned by packages/ui/tui/src/extension/types.ts',
+  TuiPromptValueHandle: 'service-local prompt value handle is owned by packages/ui/tui/src/prompt.ts',
+  TuiPromptUnsubscribe: 'service-local prompt unsubscribe is owned by packages/ui/tui/src/prompt.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

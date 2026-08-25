@@ -39,6 +39,14 @@
       "@deepseek-ai/cordis-plugin-logger-console": ["./vendor/logger-console/src"],
       "@deepseek-ai/node-addon-landlock-run": ["./native/landlock-run/packages/entry/src/index.ts"],
       "@deepseek-ai/dsh-invariants": ["./packages/runtime-diagnostics/invariants/src/index.ts"],
+      "@deepseek-ai/dsh-codewhale": ["./packages/bundle/codewhale/src/index.ts"],
+      "@deepseek-ai/dsh-codewhale/invariant": ["./packages/bundle/codewhale/src/invariant.ts"],
+      "@deepseek-ai/dsh-codewhale-constitution": ["./packages/codewhale/constitution/src/index.ts"],
+      "@deepseek-ai/dsh-codewhale-constitution/invariant": ["./packages/codewhale/constitution/src/invariant.ts"],
+      "@deepseek-ai/dsh-codewhale-fleet": ["./packages/codewhale/fleet/src/index.ts"],
+      "@deepseek-ai/dsh-codewhale-fleet/invariant": ["./packages/codewhale/fleet/src/invariant.ts"],
+      "@deepseek-ai/dsh-codewhale-snapshot": ["./packages/codewhale/snapshot/src/index.ts"],
+      "@deepseek-ai/dsh-codewhale-snapshot/invariant": ["./packages/codewhale/snapshot/src/invariant.ts"],
       "@deepseek-ai/dsh-tool-call-timeout-policy": ["./packages/guard/timeout-policy/src"],
       "@deepseek-ai/dsh-tool-call-timeout-policy/invariant": ["./packages/guard/timeout-policy/src/invariant.ts"],
       "@deepseek-ai/dsh-typert-registry": ["./packages/typert/registry/src/index.ts"],
@@ -60,6 +68,7 @@
       "@deepseek-ai/dsh-tool-todo/client": ["./packages/todo/tool-todo/src/client.ts"],
       "@deepseek-ai/dsh-session-title/types": ["./packages/session/session-title/src/types.ts"],
       "@deepseek-ai/dsh-session-title/client": ["./packages/session/session-title/src/client.ts"],
+      "@deepseek-ai/dsh-tui/prompt": ["./packages/ui/tui/src/prompt.ts"],
       "@deepseek-ai/dsh-session-stats/types": ["./packages/session/session-stats/src/types.ts"],
       "@deepseek-ai/dsh-session-stats/client": ["./packages/session/session-stats/src/client.ts"],
       "@deepseek-ai/dsh-plan-mode/types": ["./packages/plan/plan-mode/src/types.ts"],
@@ -126,6 +135,7 @@
         "./packages/extensions/*/src/invariant.ts",
         "./packages/sandbox/*/src/invariant.ts",
         "./packages/hooks/*/src/invariant.ts",
+        "./packages/codewhale/*/src/invariant.ts",
         "./packages/session/*/src/invariant.ts",
         "./packages/session-query/*/src/invariant.ts",
         "./packages/settings/*/src/invariant.ts",
@@ -140,7 +150,8 @@
         "./packages/util/*/src/invariant.ts",
         "./packages/mcp/*/src/invariant.ts",
         "./packages/identity/*/src/invariant.ts",
-        "./packages/test-support/*/src/invariant.ts"
+        "./packages/test-support/*/src/invariant.ts",
+        "./packages/ui/*/src/invariant.ts"
       ],
       // host/client package names prefix the group dir (dsh-client-<dir>), so
       // the generic dsh-*/invariant list above cannot map them; strip the
@@ -149,6 +160,7 @@
       "@deepseek-ai/dsh-client-*/invariant": ["./packages/client/*/src/invariant.ts"],
       "@deepseek-ai/dsh-headless/startup": ["./packages/bundle/headless/src/startup.ts"],
       "@deepseek-ai/dsh-web-app/startup": ["./packages/bundle/web-app/src/startup.ts"],
+      "@deepseek-ai/dsh-tui-app/startup": ["./packages/bundle/tui-app/src/startup.ts"],
       "@deepseek-ai/dsh-client-*/client": ["./packages/client/*/src/client"],
        // One wildcard maps every @deepseek-ai/dsh-<name> to its source. Package
       // dir names are unique across groups, so first-on-disk-wins resolution is
@@ -272,7 +284,8 @@
         "./packages/identity/*/src",
         "./packages/test-support/*/src",
         "./packages/host/*/src",
-        "./packages/client/*/src"
+        "./packages/client/*/src",
+        "./packages/ui/*/src"
       ]
     }
   }

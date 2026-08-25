@@ -407,6 +407,52 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/feedback/command-feedback/src/index.ts:62`](../packages/feedback/command-feedback/src/index.ts)
 
+### `fleet/*`
+
+<a id="fleetend--log-only"></a>
+
+#### `fleet/end` — log-only
+
+```ts persistence-catalog
+/**
+ * A fleet run closed: `clean` when every reviewer passed a round,
+ * `fixes-exhausted` when `Config.maxRounds` review rounds produced fixes.
+ */
+'fleet/end': { id: string; reason: 'clean' | 'fixes-exhausted' }
+```
+
+来源：[`packages/codewhale/fleet/src/index.ts:94`](../packages/codewhale/fleet/src/index.ts)
+
+<a id="fleetreview--log-only"></a>
+
+#### `fleet/review` — log-only
+
+```ts persistence-catalog
+/**
+ * One reviewer role completed one pass over the latest turn. `verdict`
+ * is the reviewer's structured conclusion; `feedback` is its text
+ * (empty only for a `pass` with no notes); `chars` is the raw reviewer
+ * output length.
+ */
+'fleet/review': { id: string; role: string; verdict: 'pass' | 'fix'; feedback: string; chars: number }
+```
+
+来源：[`packages/codewhale/fleet/src/index.ts:89`](../packages/codewhale/fleet/src/index.ts)
+
+<a id="fleetrun--log-only"></a>
+
+#### `fleet/run` — log-only
+
+```ts persistence-catalog
+/**
+ * A fleet run opened: the steered task (if any) follows as a
+ * `user/message`. The run id is the run's sequence number as a string.
+ */
+'fleet/run': { id: string; roles: number }
+```
+
+来源：[`packages/codewhale/fleet/src/index.ts:82`](../packages/codewhale/fleet/src/index.ts)
+
 ### `goal/*`
 
 <a id="goalchange--log-only"></a>
@@ -561,6 +607,51 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/core/session/src/types.ts:304`](../packages/core/session/src/types.ts)
 
+### `rheostat/*`
+
+<a id="rheostatactive--log-only"></a>
+
+#### `rheostat/active` — log-only
+
+```ts persistence-catalog
+/**
+ * Whether the style dial is on from this point on: log-only,
+ * non-surface, whole-value replace. The last `rheostat/active` wins; a
+ * log with none folds to {@link DEFAULT_ACTIVE}. The dial is on by
+ * default; `/rheostat off` turns it off, and sliding the dial turns it
+ * back on.
+ *
+ * Appended with the envelope's `ignorable` marker for the same reason as
+ * `rheostat/position`: an out-of-repo reader skips it rather than
+ * refusing the session log.
+ */
+'rheostat/active': { active: boolean }
+```
+
+来源：[`packages/context/rheostat/src/index.ts:54`](../packages/context/rheostat/src/index.ts)
+
+<a id="rheostatposition--log-only"></a>
+
+#### `rheostat/position` — log-only
+
+```ts persistence-catalog
+/**
+ * The style-dial position in force from this point on: log-only,
+ * non-surface, whole-value replace. The last `rheostat/position` wins; a
+ * log with none folds to {@link DEFAULT_POSITION}.
+ *
+ * Appended with the envelope's `ignorable` marker: the position is a
+ * styling preference, not reconstruction state, so a harness whose
+ * generated event vocabulary lacks this plugin's types (an out-of-repo
+ * install) must skip the event and keep the session loadable instead of
+ * refusing the log. A harness that knows the type folds it normally, so
+ * the dial still restores wherever the plugin is mounted.
+ */
+'rheostat/position': { position: number }
+```
+
+来源：[`packages/context/rheostat/src/index.ts:42`](../packages/context/rheostat/src/index.ts)
+
 ### `sandbox/*`
 
 <a id="sandboxmode--log-only"></a>
@@ -664,6 +755,39 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 类型：[SessionTitleLlmRequestEventData](subsystems/session-title.md)
 
 来源：[`packages/session/session-title-llm/src/index.ts:43`](../packages/session/session-title-llm/src/index.ts)
+
+### `snapshot/*`
+
+<a id="snapshotrestore--log-only"></a>
+
+#### `snapshot/restore` — log-only
+
+```ts persistence-catalog
+/**
+ * The workspace was restored from snapshot `seq` (whose source turn was
+ * `turn`, or `null` for a pre-turn baseline that later versions may
+ * introduce). The restore itself is announced to the model through the
+ * injected notice, which is the logged user/message that carries the
+ * model-visible fact.
+ */
+'snapshot/restore': { seq: number; turn: number | null }
+```
+
+来源：[`packages/codewhale/snapshot/src/index.ts:90`](../packages/codewhale/snapshot/src/index.ts)
+
+<a id="snapshottaken--log-only"></a>
+
+#### `snapshot/taken` — log-only
+
+```ts persistence-catalog
+/**
+ * A workspace snapshot was taken after `turn/end`. Log-only UI state;
+ * replay reconstructs the snapshot store layout, not file contents.
+ */
+'snapshot/taken': { seq: number; turn: number; files: number }
+```
+
+来源：[`packages/codewhale/snapshot/src/index.ts:82`](../packages/codewhale/snapshot/src/index.ts)
 
 ### `step/*`
 

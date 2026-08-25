@@ -195,6 +195,11 @@ flowchart LR
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
+  pkg_tui["tui"]
+  svc_tui["ctx.tui<br/>Interactive terminal surface"]
+  pkg_tui_app["tui-app"]
+  svc_tuiPrompt["ctx.tuiPrompt<br/>Live prompt value registry"]
+  svc_tuiResumeHost["ctx.tuiResumeHost<br/>Resume handoff host boundary"]
   pkg_acp --> svc_approval
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
@@ -285,6 +290,9 @@ flowchart LR
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
   pkg_tools --> svc_tools
+  pkg_tui --> svc_tui
+  pkg_tui --> svc_tuiPrompt
+  pkg_tui --> svc_tuiResumeHost
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
   pkg_web --> svc_web
@@ -398,6 +406,9 @@ flowchart LR
   svc_tools --> pkg_tool_terminal
   svc_tools --> pkg_tool_todo
   svc_tools --> pkg_tool_web
+  svc_tui --> pkg_tui_app
+  svc_tuiPrompt --> pkg_tui
+  svc_tuiResumeHost --> pkg_tui
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
@@ -469,5 +480,8 @@ flowchart LR
 | `ctx.apiProxy` | `core` | `apiproxy` | - | `connection` | - | 与传输无关的 Host 网关接口：它分派浏览器 API 调用，每条打开的 Host 流自行订阅转发事件，而不是由广播方法向其推送。 |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 拥有内存定义注册表、Host 半的 vm 沙箱和 request-run 往返流程；浏览器页面通过其 Remote 命名空间在线访问同一服务。 |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 注册 Host inspect 提供方、镜像 Client 提供方 manifest，并通过动态 Cordis 传输路由 Client 查询。 |
+| `ctx.tui` | `core` | [`tui`](../packages/ui/tui) | - | [`tui-app`](../packages/bundle/tui-app) | - | 拥有交互式 TUI 呈现与输入循环：transcript（对话记录）、工具卡片、状态、浮层和编辑器；插件通过浮层与提示词注册来扩展它。 |
+| `ctx.tuiPrompt` | `core` | [`tui`](../packages/ui/tui) | - | [`tui`](../packages/ui/tui) | - | 由 TUI 提示词模板插值的上下文全局可变值；任何注册、变更或释放都会合并触发渲染通知。 |
+| `ctx.tuiResumeHost` | `core` | [`tui`](../packages/ui/tui) | - | [`tui`](../packages/ui/tui) | - | 随附 CLI 用于原子化 resume 交接的进程生命周期所有者：释放当前应用，并将其替换为所选会话的运行时。 |
 
 维护模式：混合模式。服务从 Cordis 声明中发现；接口、实现和消费方角色在 `scripts/gen-doc-graphs.ts` 中分类，并设有完整性守卫。

@@ -369,6 +369,11 @@
       config:
         allowParallelInProgress: true
 
+    # The per-session style dial (滑动变阻器): slides the response style
+    # between 0 (terse) and 1 (expressive) via /rheostat and rheostat_set.
+    - id: rheostat
+      name: '@deepseek-ai/dsh-rheostat'
+
     # Persisted same-session goals reach the model and the slash menu here; the
     # domain, driver, and `/goal` command are above.
     - id: tool-goal
@@ -449,3 +454,10 @@
     # choice.
     - id: llm-deepseek
       name: '@deepseek-ai/dsh-llm-deepseek'
+
+    # The OpenCode Go adapter (OpenCode Zen Go subscription, OpenAI-compatible
+    # surface). Same per-request resolution as llm-deepseek: base URL and key come
+    # from the `llm-opencode-go:` settings section over this entry, with the key
+    # resolving from the credential store (default reference OPENCODE_GO_API_KEY).
+    - id: llm-opencode-go
+      name: '@deepseek-ai/dsh-llm-opencode-go'

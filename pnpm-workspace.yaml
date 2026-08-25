@@ -69,4 +69,8 @@ minimumReleaseAgeExclude:
   - node-addon-require-builtin@0.1.4
 
 patchedDependencies:
+  # TUI input/editor behavior the terminal front door depends on: editor frame
+  # and prompt-line options, word-wrap continuation width, and five-key
+  # navigation (see the dsh-tui README for what each hunk enables).
+  '@earendil-works/pi-tui@0.80.7': patches/@earendil-works__pi-tui@0.80.7.patch
   node-pty@1.1.0: patches/node-pty@1.1.0.patch

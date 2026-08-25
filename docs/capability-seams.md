@@ -193,6 +193,11 @@ flowchart LR
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
+  pkg_tui["tui"]
+  svc_tui["ctx.tui<br/>Interactive terminal surface"]
+  pkg_tui_app["tui-app"]
+  svc_tuiPrompt["ctx.tuiPrompt<br/>Live prompt value registry"]
+  svc_tuiResumeHost["ctx.tuiResumeHost<br/>Resume handoff host boundary"]
   pkg_acp --> svc_approval
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
@@ -283,6 +288,9 @@ flowchart LR
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
   pkg_tools --> svc_tools
+  pkg_tui --> svc_tui
+  pkg_tui --> svc_tuiPrompt
+  pkg_tui --> svc_tuiResumeHost
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
   pkg_web --> svc_web
@@ -396,6 +404,9 @@ flowchart LR
   svc_tools --> pkg_tool_terminal
   svc_tools --> pkg_tool_todo
   svc_tools --> pkg_tool_web
+  svc_tui --> pkg_tui_app
+  svc_tuiPrompt --> pkg_tui
+  svc_tuiResumeHost --> pkg_tui
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
@@ -467,5 +478,8 @@ flowchart LR
 | `ctx.apiProxy` | `core` | `apiproxy` | - | `connection` | - | The transport-agnostic host gateway face: it dispatches browser API calls, and each open host stream subscribes to the events it forwards rather than being pushed to through a broadcast verb. |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Owns the in-memory definition registry, the vm sandbox for host halves, and the request-run round trip; browser pages reach the same service over the wire through its remote namespace. |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport. |
+| `ctx.tui` | `core` | [`tui`](../packages/ui/tui) | - | [`tui-app`](../packages/bundle/tui-app) | - | Owns the interactive TUI presentation and input loop: transcript, tool cards, status, overlays, and the editor; plugins extend it through overlay and prompt registrations. |
+| `ctx.tuiPrompt` | `core` | [`tui`](../packages/ui/tui) | - | [`tui`](../packages/ui/tui) | - | Context-global mutable values interpolated by TUI prompt templates, with coalesced render notifications on any registration, mutation, or disposal. |
+| `ctx.tuiResumeHost` | `core` | [`tui`](../packages/ui/tui) | - | [`tui`](../packages/ui/tui) | - | Process-lifecycle owner used by the shipped CLI for an atomic resume handoff: disposes the current app and replaces it with a runtime for the selected session. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.

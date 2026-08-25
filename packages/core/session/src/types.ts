@@ -389,6 +389,23 @@ export interface SurfaceIntent {
 }
 
 /**
+ * Optional envelope flags for {@link Session.append}, merged with
+ * {@link SurfaceIntent} on surface events. Today it carries only the
+ * ignorable marker.
+ */
+export interface AppendOptions {
+  /**
+   * Mark the event ignorable (envelope `ignorable: true`): a reader that does
+   * not recognize the event's `type` may safely skip it instead of refusing
+   * the log. Set only on purely informational records whose loss cannot affect
+   * reconstruction — the vocabulary contract for out-of-repo plugin event
+   * types, which first-party readers refuse unless marked (see
+   * {@link SessionEvent.ignorable}).
+   */
+  ignorable?: true
+}
+
+/**
  * One immutable entry in the session log.
  *
  * A proper discriminated union over `type` (not independent `type`/`data`

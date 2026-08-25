@@ -242,6 +242,33 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
       }
     })
 
+    it('persists an ignorable plugin event appended live and reloads it', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const session = ctx.sessions.create(SessionId('ignorable-live'), { meta: { cwd: WORK } })
+        const appendRaw = session.append.bind(session) as unknown as (
+          type: string, data: unknown, opts?: { ignorable?: true },
+        ) => SessionEvent
+        session.append('turn/start', { turn: 1 })
+        appendRaw('plugin/state', { position: 0.5 }, { ignorable: true })
+        session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+        await ctx.sessions.flush(session)
+
+        // An out-of-repo event type outside the generated vocabulary loads
+        // because the envelope's ignorable marker lets the reader skip it.
+        const loaded = await ctx.sessionPersistence.load(SessionId('ignorable-live'))
+        expect(loaded.events).toEqual([
+          expect.objectContaining({ type: 'turn/start' }),
+          expect.objectContaining({ type: 'plugin/state', ignorable: true, data: { position: 0.5 } }),
+          expect.objectContaining({ type: 'turn/end' }),
+        ])
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
     it('rejects crash-repair load while a live session owns the persisted prefix', async () => {
       const fix = await makeFixture()
       const { ctx, fiber } = await freshCtx(fix)

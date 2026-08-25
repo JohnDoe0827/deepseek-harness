@@ -9,7 +9,7 @@ import SessionStore, {
   SessionId,
   snapshotSessionEvent,
 } from '@deepseek-ai/dsh-session'
-import type { CreateSessionOptions, SessionEventType, SessionHeader, SessionSurface, TodoItem } from '@deepseek-ai/dsh-session'
+import type { CreateSessionOptions, SessionEventMap, SessionEventType, SessionHeader, SessionSurface, TodoItem } from '@deepseek-ai/dsh-session'
 
 describe('Session', () => {
   it('exposes one stable readonly surface view', () => {
@@ -302,6 +302,77 @@ describe('Session', () => {
     }
   })
 
+  it('accepts a tool/result whose empty callId matches its empty block', () => {
+    // A provider that emits a nameless tool call is recorded faithfully as an
+    // "unknown tool" error result; the self-consistent empty callId must not
+    // make the whole stored session unloadable at the next cold read.
+    const event = {
+      type: 'tool/result',
+      seq: 0,
+      time: 1,
+      surfaceOp: 'append',
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'empty-call-result',
+          role: 'user',
+          content: [{
+            type: 'tool-result',
+            toolCallId: '',
+            content: [{ type: 'text', text: 'Error: unknown tool ""' }],
+            isError: true,
+          }],
+          source: { kind: 'tool', callId: '' },
+        },
+      },
+    } as unknown as SessionEvent
+    expect(() => Session.create(SessionId('empty-call-id'), [event])).not.toThrow()
+    const snapshot = snapshotSessionEvent(event)
+    expect(snapshot.type === 'tool/result'
+      && snapshot.data.message.source.callId === ''
+      && snapshot.data.message.content[0].toolCallId === '').toBe(true)
+  })
+
+  it('rejects an append whose message the load path would refuse', () => {
+    const session = Session.create(SessionId('append-shape'))
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    expect(() => session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: {
+        id: 'bad-source',
+        role: 'user',
+        content: [{
+          type: 'tool-result',
+          toolCallId: 'call-1',
+          content: [{ type: 'text', text: 'result' }],
+          isError: false,
+        }],
+        source: { kind: 'user' },
+      },
+    } as unknown as SessionEventMap['tool/result'], { surfaceOp: 'append' }))
+      .toThrow('session event "tool/result" message must have tool source')
+  })
+
+  it('appends an ignorable marker only when requested', () => {
+    const session = Session.create(SessionId('append-ignorable'))
+    const plain = session.append('turn/start', { turn: 1 })
+    expect(plain.ignorable).toBeUndefined()
+    const marked = session.append('turn/end', { turn: 1, reason: { kind: 'completed' } }, { ignorable: true })
+    expect(marked.ignorable).toBe(true)
+    // A surface event accepts the same flag beside its mandatory surfaceOp.
+    const surface = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append', ignorable: true })
+    expect(surface.ignorable).toBe(true)
+    expect(surface.surfaceOp).toBe('append')
+    // The marker survives the snapshot boundary a persistence reader sees.
+    const snapshot = snapshotSessionEvent(surface)
+    expect(snapshot.ignorable).toBe(true)
+  })
+
   it('snapshots message events without validating plugin-owned block details', () => {
     const boundary = snapshotSessionEvent({
       type: 'turn/start',
@@ -511,7 +582,11 @@ describe('Session', () => {
 
   it('accepts dense arrays and nested plain objects', () => {
     const session = Session.create(SessionId('s6'))
-    expect(() => session.append('user/message', { content: [{ type: 'text', text: 'x' }], source: { kind: 'user' }, extra: [1, 2, [3, { a: null, b: true }]] } as never, { surfaceOp: 'append' })).not.toThrow()
+    expect(() => session.append('user/message', {
+      id: 'dense-array-message', role: 'user',
+      content: [{ type: 'text', text: 'x' }], source: { kind: 'user' },
+      extra: [1, 2, [3, { a: null, b: true }]],
+    } as never, { surfaceOp: 'append' })).not.toThrow()
     expect(session.events).toHaveLength(1)
   })
 
@@ -863,7 +938,10 @@ describe('Session', () => {
       data: unknown,
       opts?: unknown,
     ) => SessionEvent
-    const data = { content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }
+    const data = {
+      id: 'surface-shape-message', role: 'user',
+      content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
+    }
 
     expect(() => appendRaw('user/message', data, { surfaceOp: 'invalid' }))
       .toThrow(/invalid surfaceOp/)

@@ -14,7 +14,7 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
+import type { AppendOptions, CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
@@ -334,9 +334,12 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
     return
   }
   if (type !== 'tool/result') return
-  if (sourceRecord['kind'] !== 'tool'
-    || typeof sourceRecord['callId'] !== 'string'
-    || sourceRecord['callId'] === '') {
+  // A present callId may be empty: a provider that emits a nameless tool call
+  // is recorded faithfully as an "unknown tool" error result, and such a
+  // self-consistent event must not brick the whole session at reload.
+  // Consistency is still enforced below — the block must cite exactly this
+  // callId — so a torn or mismatched write keeps failing.
+  if (sourceRecord['kind'] !== 'tool' || typeof sourceRecord['callId'] !== 'string') {
     throw new Error(`${subject} message must have tool source`)
   }
   const content = messageRecord['content'] as unknown[]
@@ -576,37 +579,40 @@ export class Session {
    *
    * @param type - The event type (key of {@link SessionEventMap}).
    * @param data - The event payload; must be JSON-serializable.
-   * @param opts - Surface metadata: `surfaceOp` controls how the event enters
+   * @param opts - Append flags: `surfaceOp` controls how the event enters
    *   the ordered surface; `sourceEventSeqs` lists the seq numbers of earlier
-   *   events this one derives from. REQUIRED for
-   *   {@link SurfaceEventType} events (every message-producing event must
+   *   events this one derives from (both REQUIRED for
+   *   {@link SurfaceEventType} events — every message-producing event must
    *   declare how it joins the surface, the sole source of derived model
-   *   history) and
-   *   rejected by the compiler for non-surface types like `turn/start` or
-   *   `assistant/chunk`.
+   *   history — and rejected by the compiler for non-surface types like
+   *   `turn/start` or `assistant/chunk`); `ignorable` marks the event so a
+   *   reader that does not recognize its type may skip it instead of refusing
+   *   the log (see {@link AppendOptions}).
    * @returns the logged event — its assigned `seq`/`time` plus the SNAPSHOT of
    *   `data` that entered the log, so reading `event.data` back sees the logged
    *   value, never the caller's still-mutable input.
    * @throws if `data` or surface metadata is not losslessly JSON-serializable
    *   (BigInt, function, symbol, undefined, negative zero, non-finite number,
    *   circular reference, sparse array, or an exotic object such as
-   *   Map/Set/Date/class instance), or when the candidate violates the
-   *   canonical surface contract (marker shape and eligibility, unique
-   *   earlier source-event references, positional replacement validity, and complete
-   *   shadowed-node coverage). One recursive pass reads, validates, and
-   *   copies each nested value once, so a stateful getter cannot supply one value
-   *   to validation and another to storage. The event log is the durable source
-   *   of truth, so a bad event fails at the append site rather than later during
-   *   a backend flush. A synchronous internal dispatch validation failure or an
-   *   append reentered while this acceptance/publication boundary is open also
-   *   rejects before the log changes.
+   *   Map/Set/Date/class instance), when a message-producing event's message
+   *   violates the replay-shape invariants (missing identity, wrong role,
+   *   invalid source, or a tool result without a matching tool source), or
+   *   when the candidate violates the canonical surface contract (marker
+   *   shape and eligibility, unique earlier source-event references, positional
+   *   replacement validity, and complete shadowed-node coverage). One recursive
+   *   pass reads, validates, and copies each nested value once, so a stateful
+   *   getter cannot supply one value to validation and another to storage. The
+   *   event log is the durable source of truth, so a bad event fails at the
+   *   append site rather than later during a backend flush. A synchronous
+   *   internal dispatch validation failure or an append reentered while this
+   *   acceptance/publication boundary is open also rejects before the log changes.
    */
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent & AppendOptions] : [opts?: AppendOptions]
   ): SessionEvent<T> {
-    const surfaceOpts: SurfaceIntent | undefined = opts[0]
+    const surfaceOpts = opts[0] as SurfaceIntent | undefined
     const surfaceMetadata = {
       ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
       ...surfaceOpts?.surfaceOp === undefined ? {} : { surfaceOp: surfaceOpts.surfaceOp },
@@ -620,6 +626,14 @@ export class Session {
     if (surfaceMetadataSnapshot === undefined) {
       throw new Error(`session event "${type}" carries non-JSON-serializable surface metadata`)
     }
+    // The write path enforces the same message-shape invariants as the
+    // load/seed paths: an event persistence would refuse later fails here,
+    // at the append site, where its producer can still react. This is the
+    // documented append contract — a bad event never reaches the log.
+    assertMessageEventShape(
+      { type, data: dataSnapshot },
+      `session event "${type}"`,
+    )
     const entry = attachments.get(this)
     if (entry?.appending) {
       throw new Error('session append cannot reenter while another append is being published')
@@ -629,6 +643,7 @@ export class Session {
       seq: this.log.length,
       time: Date.now(),
       data: dataSnapshot,
+      ...opts[0]?.ignorable === true ? { ignorable: true } : {},
       ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
     } as unknown as SessionEvent<T>)
     this.surfaceManager.validateNext(event as SessionEvent)

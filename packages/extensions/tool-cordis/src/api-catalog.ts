@@ -1940,6 +1940,63 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'tui',
+    summary: 'Optional terminal-local interaction service provided by one mounted TUI.',
+    description: 'Optional terminal-local interaction service provided by one mounted TUI.\n\nThe concrete provider retains pi-tui, focus, and terminal lifecycle state. Plugins receive only effect-owned overlay sessions.',
+    methods: [
+      {
+        signature: 'abstract readonly agent: Agent',
+        description: 'Exact agent driven by this terminal instance.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract openOverlay(request: TuiOverlayRequest): TuiOverlaySession',
+        description: 'Queue an interactive overlay owned by the calling plugin fiber.\n\nThe TUI displays one overlay at a time in FIFO order. Disposing the caller removes a queued overlay or closes an active one before plugin teardown settles. This live presentation is neither logged nor replayed.',
+        parameters: [{ name: 'request', description: 'component factory, layout constraints, and cancellation.' }],
+        returns: 'the effect-owned overlay session.',
+        throws: ['when the TUI has begun shutting down.'],
+      },
+    ],
+  },
+  {
+    key: 'tuiPrompt',
+    summary: 'Context-global mutable values interpolated by TUI theme prompt templates.',
+    description: 'Context-global mutable values interpolated by TUI theme prompt templates. A registration, mutation, or disposal schedules one coalesced notification to the renderer subscribed with TuiPromptService.subscribe, so a value that changes on its own schedule (not only in response to a UI event) still redraws. Notification is a direct in-service callback, not a Cordis event.',
+    methods: [
+      {
+        signature: 'register(name: string, initialValue?: string): TuiPromptValueHandle',
+        description: 'Register one globally unique template value under the calling Cordis effect.',
+        parameters: [{ name: 'name', description: 'Lowercase slash-separated template name.' }, { name: 'initialValue', description: 'Initial trusted ANSI-capable fragment.' }],
+        returns: 'A mutable handle whose disposal unregisters the name.',
+      },
+      {
+        signature: 'get(name: string): string | undefined',
+        description: 'Read a registered fragment without evaluating plugin code.',
+        parameters: [{ name: 'name', description: 'Exact registered template name.' }],
+        returns: 'The current fragment, or `undefined` when unknown or unavailable.',
+      },
+      {
+        signature: 'subscribe(listener: () => unknown): TuiPromptUnsubscribe',
+        description: 'Observe registration and value changes. The listener runs after a coalesced microtask following any burst of mutations; the renderer re-reads current values on that callback. The subscription is owned by the calling Cordis effect, so it is removed when the subscriber\'s fiber disposes; the returned disposer removes it early. Listener failures are contained — a synchronous throw or a rejected returned promise cannot starve the other observers.',
+        parameters: [{ name: 'listener', description: 'Invoked once per coalesced change burst. Delivery does not wait on a returned promise; its rejection is only observed and logged, never left unhandled, so an async listener cannot order later observers.' }],
+        returns: 'A disposer that removes the subscription.',
+      },
+    ],
+  },
+  {
+    key: 'tuiResumeHost',
+    summary: 'Process-lifecycle owner used by the shipped CLI for an atomic resume handoff.',
+    description: 'Process-lifecycle owner used by the shipped CLI for an atomic resume handoff.',
+    methods: [
+      {
+        signature: 'handoff(sessionId: SessionId, cwd: string): Promise<never>',
+        description: 'Dispose the current app and replace it with a runtime for `sessionId` in `cwd`. Success does not return. A host may reject before it commits teardown; after commit it owns fatal reporting and process exit.',
+        parameters: [{ name: 'sessionId', description: 'validated persisted session selected by the user.' }, { name: 'cwd', description: 'the selected session\'s own workspace, which the replacement process must run in: process cwd, not the restored session header, is what filesystem and shell tools resolve against. It may differ from the current workspace, so a host that cannot enter it must reject before committing teardown.' }],
+        returns: 'a promise that never settles on success: the host owns process teardown and exit once it commits the handoff.',
+      },
+    ],
+  },
+  {
     key: 'typert',
     summary: 'Registry of generated schemas, package reflection, invocations, and Remote dependency providers.',
     description: 'Registry of generated schemas, package reflection, invocations, and Remote dependency providers.',
@@ -4448,6 +4505,66 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolSchema',
     declaration: 'export interface ToolSchema {\n    name: string;\n    description: string;\n    parameters: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'TuiComponent',
+    declaration: 'export interface TuiComponent {\n    render(width: number): string[];\n    handleInput?(data: string): void;\n    wantsKeyRelease?: boolean;\n    invalidate(): void;\n}',
+  },
+  {
+    name: 'TuiFocusable',
+    declaration: 'export interface TuiFocusable {\n    focused: boolean;\n}',
+  },
+  {
+    name: 'TuiOverlayAnchor',
+    declaration: 'export type TuiOverlayAnchor = \'center\' | \'top-left\' | \'top-right\' | \'bottom-left\' | \'bottom-right\' | \'top-center\' | \'bottom-center\' | \'left-center\' | \'right-center\';',
+  },
+  {
+    name: 'TuiOverlayCloseReason',
+    declaration: 'export type TuiOverlayCloseReason = \'closed\' | \'aborted\' | \'owner-disposed\' | \'tui-disposed\' | \'error\';',
+  },
+  {
+    name: 'TuiOverlayHost',
+    declaration: 'export interface TuiOverlayHost {\n    readonly signal: AbortSignal;\n    readonly viewport: TuiViewport;\n    readonly theme: TuiTheme;\n    display(value: string): string;\n    invalidate(): void;\n    close(): void;\n}',
+  },
+  {
+    name: 'TuiOverlayMargin',
+    declaration: 'export interface TuiOverlayMargin {\n    readonly top?: number;\n    readonly right?: number;\n    readonly bottom?: number;\n    readonly left?: number;\n}',
+  },
+  {
+    name: 'TuiOverlayOptions',
+    declaration: 'export interface TuiOverlayOptions {\n    readonly width?: number | `${number}%`;\n    readonly minWidth?: number;\n    readonly maxHeight?: number | `${number}%`;\n    readonly anchor?: TuiOverlayAnchor;\n    readonly margin?: number | TuiOverlayMargin;\n}',
+  },
+  {
+    name: 'TuiOverlayOutcome',
+    declaration: 'export type TuiOverlayOutcome = {\n    readonly reason: Exclude<TuiOverlayCloseReason, \'error\'>;\n} | {\n    readonly reason: \'error\';\n    readonly error: unknown;\n};',
+  },
+  {
+    name: 'TuiOverlayRequest',
+    declaration: 'export interface TuiOverlayRequest {\n    readonly create: (host: TuiOverlayHost) => TuiComponent & Partial<TuiFocusable>;\n    readonly options?: TuiOverlayOptions;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'TuiOverlaySession',
+    declaration: 'export interface TuiOverlaySession {\n    readonly state: TuiOverlayState;\n    readonly closed: Promise<TuiOverlayOutcome>;\n    close(): Promise<TuiOverlayOutcome>;\n}',
+  },
+  {
+    name: 'TuiOverlayState',
+    declaration: 'export type TuiOverlayState = \'queued\' | \'active\' | \'closed\';',
+  },
+  {
+    name: 'TuiPromptUnsubscribe',
+    declaration: 'export type TuiPromptUnsubscribe = () => void;',
+  },
+  {
+    name: 'TuiPromptValueHandle',
+    declaration: 'export interface TuiPromptValueHandle {\n    set(value: string | undefined): void;\n    dispose(): void;\n}',
+  },
+  {
+    name: 'TuiTheme',
+    declaration: 'export interface TuiTheme {\n    readonly text: (value: string) => string;\n    readonly brand: (value: string) => string;\n    readonly dim: (value: string) => string;\n    readonly accent: (value: string) => string;\n    readonly success: (value: string) => string;\n    readonly warning: (value: string) => string;\n    readonly error: (value: string) => string;\n    readonly bold: (value: string) => string;\n}',
+  },
+  {
+    name: 'TuiViewport',
+    declaration: 'export interface TuiViewport {\n    readonly columns: number;\n    readonly rows: number;\n}',
   },
   {
     name: 'TurnEndCancelCause',

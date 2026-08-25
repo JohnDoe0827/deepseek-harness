@@ -21,7 +21,24 @@ function exitCode(argv: string[]): number {
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('parseDshArgs', () => {
-  it('routes profile boots and the web alias, handing the rest to the app', () => {
+  it('routes profile boots and the surface aliases, handing the rest to the app', () => {
+    // Bare `dsh` boots the interactive tui profile; app flags reach it.
+    expect(parse([])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
+    // Removed launcher flags now become app arguments of the default profile;
+    // the tui app owns their rejection at boot.
+    expect(parse(['--config', 'c.yml']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--config', 'c.yml'] })
+    expect(parse(['-p', 'task']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['-p', 'task'] })
+    expect(parse(['run', 'task']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['run', 'task'] })
+    expect(parse(['tui'])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
+    expect(parse(['--resume', 'abc']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--resume', 'abc'] })
+    expect(parse(['tui', '--resume', 'abc', '--patch', 'late.yml']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--resume', 'abc', '--patch', 'late.yml'] })
+    expect(parse(['--bogus']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--bogus'] })
     expect(parse(['--profile', 'tui'])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
     expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--patch', 'b.yml']))
       .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml', 'b.yml'], args: [] })
@@ -68,21 +85,21 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })
     expect(parse(['web', '--dump-default-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: true, patches: [] })
+    expect(parse(['tui', '--dump-config']))
+      .toEqual({ mode: 'dump-config', profile: 'tui', defaultOnly: false, patches: [] })
+    expect(parse(['tui', '--dump-default-config']))
+      .toEqual({ mode: 'dump-config', profile: 'tui', defaultOnly: true, patches: [] })
+    // Bare `dsh --dump-config` dumps the default profile's tree.
+    expect(parse(['--dump-config']))
+      .toEqual({ mode: 'dump-config', profile: 'tui', defaultOnly: false, patches: [] })
   })
 
-  it('rejects missing profile, removed flags, and contradictory inputs', () => {
-    expect(exitCode([])).toBe(1)
-    expect(exitCode(['tui'])).toBe(1) // an app argument without --profile has no app to reach
-    expect(exitCode(['--config', 'c.yml'])).toBe(1) // removed
-    expect(exitCode(['-p', 'task'])).toBe(1) // removed
-    expect(exitCode(['run', 'task'])).toBe(1) // app-owned task replaced the launcher subcommand
+  it('rejects invalid profiles and contradictory launcher inputs', () => {
     expect(exitCode(['--profile', ''])).toBe(1)
     expect(exitCode(['--profile', 'x', '--patch='])).toBe(1)
-    expect(exitCode(['--dump-config'])).toBe(1)
     expect(exitCode(['--profile', 'x', '--dump-config', '--dump-default-config'])).toBe(1)
     expect(exitCode(['--profile', 'x', '--dump-default-config', '--patch', 'p.yml'])).toBe(1)
     expect(exitCode(['--profile', 'x', '--dump-config', 'task'])).toBe(1)
-    expect(exitCode(['--bogus'])).toBe(1)
     expect(exitCode(['--profile', 'x', 'web'])).toBe(1)
     expect(exitCode(['web', '--dump-config', '--dump-default-config'])).toBe(1)
     expect(exitCode(['web', '--dump-default-config', '--patch', 'w.yml'])).toBe(1)

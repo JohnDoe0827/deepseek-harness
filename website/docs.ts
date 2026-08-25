@@ -116,7 +116,7 @@ const homeAndGuide = pairedPages([
   {
     source: 'docs/user/guide/index.md',
     route: 'guide/quickstart.md',
-    label: { root: '使用 Web UI', en: 'Use the Web UI' },
+    label: { root: '使用终端界面（TUI）', en: 'Use the TUI' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
     order: 1,
@@ -129,6 +129,14 @@ const homeAndGuide = pairedPages([
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
     order: 2,
+  },
+  {
+    source: 'docs/user/guide/web.md',
+    route: 'guide/web.md',
+    label: { root: '使用 Web UI', en: 'Use the Web UI' },
+    sidebar: { root: 'zh-guide', en: 'en-guide' },
+    section: { root: '入门', en: 'Guide' },
+    order: 3,
   },
   {
     source: 'docs/user/guide/python-sdk.md',

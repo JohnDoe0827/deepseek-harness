@@ -10,7 +10,7 @@ This reference defines the profile, web-alias, plugin-management, and config-dum
 
 Bundle names resolve from the dsh installation first, then from the profile directory. In-box bundles (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`) therefore always come from the same installation as the running `dsh`; out-of-tree bundles come from the profile's pnpm-managed `node_modules`. A bare plugin `name` in any patch row resolves through the profile directory's Node parent-walk, which reaches the maintained installation fallback `$DSH_HOME/profiles/node_modules` (one symlink per package the installation's app and bundles depend on, healed on every launch).
 
-The `web` and `headless` profiles auto-initialize from shipped templates on first use (`web`: base + web-app; `headless`: base + headless). Any other missing profile fails loud with a hint to run `dsh plugin --profile <name> add <package>`.
+The `tui`, `web`, and `headless` profiles auto-initialize from shipped templates on first use (`tui`: base + tui-app; `web`: base + web-app; `headless`: base + headless). Any other missing profile fails loud with a hint to run `dsh plugin --profile <name> add <package>`.
 
 ### App arguments
 
@@ -18,12 +18,15 @@ The launcher's flags come first and end at the first token it does not recognize
 
 A composition mounts once. An ordinary plugin injects `cmdlineArgs`, parses this app's arguments, and provides what it resolved as a service; each row configured from flags injects that service, and Loader waits for it before evaluating the row's config (`port: !!js ctx.webStartup.port ?? 3080`). A flag therefore beats the value written beside it. This precedence requires the row to retain that expression; a user patch that replaces the whole `config` with literals removes the runtime read. Help and rejected arguments request exit — nonzero for a rejection, 0 for help — without activating rows that depend on the provider's service. A live `cordis.patch.yml` edit re-evaluates expressions against services that are still up, so it cannot reset a served port.
 
-Launcher flags must come before app arguments, and the launcher's parser consumes one `--`: an app argument that must arrive as a literal `--` needs `-- --`. A first app argument equal to `web` or `plugin` selects that subcommand instead. `ctx.cmdlineArgs.get()` is a shared immutable read: multiple plugins may parse the same snapshot, while a profile with no reader ignores its app arguments.
+Launcher flags must come before app arguments, and the launcher's parser consumes one `--`: an app argument that must arrive as a literal `--` needs `-- --`. A first app argument equal to `tui`, `web`, or `plugin` selects that subcommand instead. `ctx.cmdlineArgs.get()` is a shared immutable read: multiple plugins may parse the same snapshot, while a profile with no reader ignores its app arguments.
+
+A bare invocation with no `--profile` and no subcommand boots the interactive `tui` profile, so `dsh` enters the terminal surface on the invoking directory and `dsh --resume <id>` reaches the same app's flag. `dsh -h` still prints the launcher's own help: an invocation that names no profile has no app to hand the flag to.
 
 The shipped apps own these command lines:
 
 | Profile | Arguments |
 |---|---|
+| `tui` | `--resume <id>` |
 | `web` | `--host`, `--port`, repeatable `--trusted-host` |
 | `headless` | the task text, as the positional argument |
 
@@ -43,14 +46,16 @@ dsh --profile web --patch ./extra.yml --dump-config
 `dsh plugin --profile <name> <args...>` initializes the profile when missing (shipped template, or `@deepseek-ai/dsh-base` alone for other names), then forwards `<args...>` to `pnpm` with the profile directory as working directory — `add`, `remove`, `why`, `update`, and every other pnpm verb work unchanged; pnpm must be on PATH. Relative path specs (`.`, `../plugin`, and their `file:`/`link:` forms) are anchored to the invoking directory first, so `add .` from a plugin checkout installs that checkout, not the profile. After every successful run, `dsh.profile.bundles` is reconciled against the installed state: each dependency resolving to a package whose manifest declares `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` joins the layer stack (so an `update` that gains the declaration activates it), a bundle-less dependency stays plain with a one-time warning, and a removed dependency leaves the stack.
 
 ```sh
-dsh plugin --profile tui add github:deepseek-harness/turtle-ui
-dsh plugin --profile tui remove turtle-ui
-dsh --profile tui
+dsh plugin --profile lab add github:deepseek-harness/turtle-ui
+dsh plugin --profile lab remove turtle-ui
+dsh --profile lab
 ```
 
 Git-hosted plugins that ship sources build during install through their `prepare` script, which pnpm ≥10 blocks until the consumer allows it: the first `add` fails with pnpm's `allowBuilds` hint (and a dsh pointer at the profile's `pnpm-workspace.yaml`); copy the printed key there and re-run. Installing a built tarball or a local checkout needs no allowance.
 
-## Web alias
+## Surface aliases
+
+`dsh tui` and `dsh web` are hardcoded aliases for `--profile tui` and `--profile web`; the flags after them belong to the app, whose ordinary bundle provider parses them. The TUI alias is also the default profile: bare `dsh` boots it identically. The TUI app's `--resume <id>` rehydrates a persisted session in its own directory, and its in-place `/resume` handoff re-executes the same command through a process replacement.
 
 `dsh web` is a hardcoded alias for `--profile web`; the flags after it belong to the web app, whose ordinary bundle provider parses them. `--host` and `--port` override the composed values of the rows that carry them, and repeatable `--trusted-host` contributes invocation authorities through `ctx.webRuntime.trustedHosts` (a deployment expression concatenates its own authorities). The client-plugin HMR receiver is always mounted and stays idle until a separate `pnpm run dev:web` watcher rebuilds client bundles.
 

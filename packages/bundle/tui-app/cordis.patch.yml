@@ -1,0 +1,110 @@
+# The dsh-tui-app bundle patch: the terminal surface over the dsh-base layer.
+# Applied after dsh-base's insert; rows here override base rows by id, with
+# the profile's own cordis.patch.yml and any --patch overlays still to come.
+#
+# A patch replaces the targeted row's whole `config`, so each row below
+# restates every key it owns.
+#
+# The tui-startup plugin parses the `--resume` flag family and provides
+# `tuiStartup` plus the launcher-owned boot slots (session identity,
+# disposable query-index path, goodbye line, resume handoff host). Rows
+# configured from those values inject that service, so Loader resolves their
+# expressions only after it exists.
+
+# ── surface-specific values the base deliberately omits ─────────────────────
+
+- id: system-prompt
+  config:
+    persona: |-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+      Verify your work by running the code or tests. Keep answers brief and
+      factual.
+
+# The TUI drives one pre-created `main` agent at the invoking directory. Its
+# exact session identity is launcher-owned (provided by tuiStartup through the
+# configuredAgentIdentities slot), so a personal overlay repointing the model
+# route cannot drop or desynchronise it.
+- id: agent-loop
+  inject: [tuiStartup]
+  config:
+    agents:
+      - id: main
+        sessionId: main
+        provider: deepseek-official
+        model: deepseek-v4-pro
+        cwd: !!js process.cwd()
+        resumeSessionId: ''
+
+# Shipped default: full thinking at max effort on every request.
+- id: llm-deepseek
+  config:
+    thinking: enabled
+    reasoningEffort: max
+
+# The full-screen TUI's `/resume` reads session titles from a durable derived
+# index. Unlike the web surface's ephemeral in-memory index, this one is a
+# process-local disposable SQLite file (created and removed by tuiStartup) so
+# the search index opens at startup and survives the session's lifetime.
+- id: session-query-sqlite
+  inject: [tuiStartup]
+  config:
+    path: !!js ctx.tuiStartup.sessionQueryPath
+    openAt: startup
+
+# ── terminal-only rows ──────────────────────────────────────────────────────
+
+- insert:
+    # The config-tree side of the TUI surface: parses `--resume`, mints the
+    # session identity, and provides the launcher-owned slots the rows above
+    # and @deepseek-ai/dsh-tui read.
+    - id: tui-startup
+      name: '@deepseek-ai/dsh-tui-app/startup'
+
+    # The derived query index behind `/resume`, over the shared persistent log
+    # root under the Harness home so it spans every workspace.
+    - id: session-reference
+      name: '@deepseek-ai/dsh-session-reference'
+
+    # The projection registry's durable checkpoint cache over the same storage
+    # root the web surface uses; checkpoints written by either surface serve
+    # both.
+    - id: storage
+      name: '@deepseek-ai/dsh-storage'
+    - id: storage-json
+      name: '@deepseek-ai/dsh-storage-json'
+      config:
+        root: !!js dshHomePath('storages')
+    - id: storage-domain
+      name: '@deepseek-ai/dsh-storage-domain'
+      config:
+        backend: json
+    - id: session-projection-cache
+      name: '@deepseek-ai/dsh-session-projection-cache'
+      config:
+        writeEveryEvents: 200
+        writeIntervalMs: 5000
+
+    # Terminal-multiplexer context, mounted only where a terminal exists.
+    - id: tmux-context
+      name: '@deepseek-ai/dsh-tmux-context'
+      config:
+        refreshIntervalMs: 900000
+
+    # The keyboard-backed provider behind ask_user_question, plan-mode review,
+    # and the front door it renders inside.
+    - id: tui-prompt
+      name: '@deepseek-ai/dsh-tui/prompt'
+
+    # The TUI renders exactly the agent the agent-loop row bound, reading the
+    # same launcher-owned identity rather than restating one.
+    - id: tui
+      name: '@deepseek-ai/dsh-tui'
+      config:
+        sessionId: !!js ctx.tuiStartup.sessionId
+        showReasoning: true
+        maxToolOutputLines: 6
+
+    # The ask-user queue the TUI provides the keyboard dialogs for.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'

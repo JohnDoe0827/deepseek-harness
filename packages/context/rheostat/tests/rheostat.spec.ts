@@ -404,6 +404,18 @@ describe('/rheostat', () => {
     expect(restored.tools.map(tool => tool.name)).toContain(rheostat.RHEOSTAT_SET)
   })
 
+  it('degrades to style-only off when the harness lacks tools.restrict (older official releases)', async () => {
+    const ctx = await setupWithCommands()
+    const agent = await scopedAgent(ctx, 'legacy-1')
+    // Remove the restriction surface exactly as a pre-scope-API harness build exposes it.
+    ;(ctx.tools as unknown as { restrict?: unknown }).restrict = undefined
+
+    await expect(ctx.commands.execute(agent, '/rheostat off', testSignal)).resolves.toBeDefined()
+    // Degradation: the dial turns off (style section) but the tools stay visible.
+    const assembly = await assembleFor(ctx, agent)
+    expect(assembly.tools.map(tool => tool.name)).toContain(rheostat.RHEOSTAT_SET)
+  })
+
   it('starts with the dial tools hidden when a resumed session folded off', async () => {
     const ctx = await setupWithCommands()
     const session = Session.create(SessionId('resume-off'))

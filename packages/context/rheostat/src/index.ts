@@ -385,7 +385,15 @@ export function apply(ctx: Context): void {
     // fakes, pre-scope carriers) simply keep the tools visible.
     const agentCtx = agent.ctx as Context | undefined
     if (agentCtx === undefined) return
-    toolMasks.set(agent, agentCtx.tools.restrict({ deny: [RHEOSTAT_SET, RHEOSTAT_GET] }))
+    // Official harness releases older than the scoped-restriction surface
+    // may lack `tools.restrict`; degrade to the style-only off instead of
+    // failing the command on a user's harness we do not control.
+    if (typeof agentCtx.tools.restrict !== 'function') return
+    try {
+      toolMasks.set(agent, agentCtx.tools.restrict({ deny: [RHEOSTAT_SET, RHEOSTAT_GET] }))
+    } catch (error) {
+      ctx.logger.warn('dsh-rheostat: cannot hide dial tools on this harness build; style-only off: %o', error)
+    }
   }
 
   /** The position in force: a pending change, else the folded log. */

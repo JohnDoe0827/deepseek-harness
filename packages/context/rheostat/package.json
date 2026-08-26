@@ -47,6 +47,7 @@
     }
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-loop": "workspace:^",
     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",

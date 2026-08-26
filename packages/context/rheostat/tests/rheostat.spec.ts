@@ -7,6 +7,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { Session, SessionId, type SessionEvent, type UserMessage } from '@deepseek-ai/dsh-session'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 
 import * as rheostat from '../src/index.ts'
 
@@ -62,6 +63,24 @@ async function setupWithCommands(): Promise<Context> {
   // The `ctx.inject` child mounts asynchronously once `commands` resolves.
   await new Promise(resolve => setImmediate(resolve))
   return ctx
+}
+
+/** An agent with a real scoped context (`agent.ctx`) plus a session, announced to the plugin. */
+async function scopedAgent(ctx: Context, id: string): Promise<Agent & { session: Session }> {
+  const session = Session.create(SessionId(id))
+  const agent = {
+    id: SessionId(id),
+    session,
+    inject(message: UserMessage) {
+      session.append('user/message', message, { surfaceOp: 'append' })
+    },
+  } as unknown as Agent & { session: Session }
+  let scope!: Scope
+  await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, agent) },
+    { inject: ['tools', 'systemPrompt'] }))
+  ;(agent as unknown as { ctx: Context }).ctx = scope.ctx
+  ctx.emit('agent/created', { agent })
+  return agent
 }
 
 /**
@@ -369,6 +388,42 @@ describe('dsh-rheostat tools', () => {
 })
 
 describe('/rheostat', () => {
+  it('hides the dial tools from the agent assembly on off and restores on slide', async () => {
+    const ctx = await setupWithCommands()
+    const agent = await scopedAgent(ctx, 'visibility-1')
+    expect((await assembleFor(ctx, agent)).tools.map(tool => tool.name))
+      .toEqual(expect.arrayContaining([rheostat.RHEOSTAT_SET, rheostat.RHEOSTAT_GET]))
+
+    await ctx.commands.execute(agent, '/rheostat off', testSignal)
+    const hidden = await assembleFor(ctx, agent)
+    expect(hidden.tools.map(tool => tool.name)).not.toContain(rheostat.RHEOSTAT_SET)
+    expect(hidden.tools.map(tool => tool.name)).not.toContain(rheostat.RHEOSTAT_GET)
+
+    await ctx.commands.execute(agent, '/rheostat 0.9', testSignal)
+    const restored = await assembleFor(ctx, agent)
+    expect(restored.tools.map(tool => tool.name)).toContain(rheostat.RHEOSTAT_SET)
+  })
+
+  it('starts with the dial tools hidden when a resumed session folded off', async () => {
+    const ctx = await setupWithCommands()
+    const session = Session.create(SessionId('resume-off'))
+    session.append('rheostat/active', { active: false }, { ignorable: true })
+    const agent = {
+      id: SessionId('resume-off'),
+      session,
+      inject(message: UserMessage) {
+        session.append('user/message', message, { surfaceOp: 'append' })
+      },
+    } as unknown as Agent & { session: Session }
+    let scope!: Scope
+    await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, agent) },
+      { inject: ['tools', 'systemPrompt'] }))
+    ;(agent as unknown as { ctx: Context }).ctx = scope.ctx
+    ctx.emit('agent/created', { agent })
+
+    const assembly = await assembleFor(ctx, agent)
+    expect(assembly.tools.map(tool => tool.name)).not.toContain(rheostat.RHEOSTAT_SET)
+  })
   it('registers only when a commands service is composed', async () => {
     const bare = await setup()
     expect(bare.get('commands')).toBeUndefined()

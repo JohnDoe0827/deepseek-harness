@@ -363,6 +363,31 @@ export function apply(ctx: Context): void {
   // already renders the new style; the pre-step commits it durably.
   const pending = new WeakMap<Session, DialState>()
 
+  // One per-agent visibility mask over the dial tools: `/rheostat off`
+  // hides rheostat_set/rheostat_get from that agent's assembled tool list
+  // (they stop being model-visible), and `/rheostat on` or a slide lifts
+  // the mask. The mask is an `agent.ctx` scoped restriction, so it unrolls
+  // with the agent; restoring calls the disposer directly.
+  const toolMasks = new WeakMap<Agent, () => void>()
+
+  /** Hide or restore the dial tools on one agent's model-facing tool list. */
+  function syncDialVisibility(agent: Agent, active: boolean): void {
+    const existing = toolMasks.get(agent)
+    if (active) {
+      if (existing !== undefined) {
+        existing()
+        toolMasks.delete(agent)
+      }
+      return
+    }
+    if (existing !== undefined) return
+    // The Agent contract carries a scoped ctx; agents without one (test
+    // fakes, pre-scope carriers) simply keep the tools visible.
+    const agentCtx = agent.ctx as Context | undefined
+    if (agentCtx === undefined) return
+    toolMasks.set(agent, agentCtx.tools.restrict({ deny: [RHEOSTAT_SET, RHEOSTAT_GET] }))
+  }
+
   /** The position in force: a pending change, else the folded log. */
   function positionIn(agent: Agent): number {
     return pending.get(agent.session)?.position ?? foldPosition(agent.session.events)
@@ -396,6 +421,12 @@ export function apply(ctx: Context): void {
     // can retry a failed durable write.
     pending.delete(session)
   }
+
+  // Restore a durable off state on resume: an agent whose history folded
+  // the dial off starts with the tools hidden, without a fresh /rheostat.
+  ctx.on('agent/created', ({ agent }) => {
+    if (!foldActive(agent.session.events)) syncDialVisibility(agent, false)
+  })
 
   ctx.on('agent/pre-step', async (
     { agent, signal },
@@ -488,6 +519,10 @@ export function apply(ctx: Context): void {
         }
         if (hasOpenTurn(agent.session.events)) {
           pending.set(agent.session, target)
+          // The selection is queued for the pre-step, but the visibility
+          // mask is an in-memory registration: apply it now so the next
+          // assembly already omits (or restores) the dial tools.
+          syncDialVisibility(agent, target.active)
           if (change.kind === 'off') {
             return { kind: 'success', text: 'Turning the style dial off (applies from the next step).' }
           }
@@ -508,6 +543,7 @@ export function apply(ctx: Context): void {
         if (target.position !== foldPosition(agent.session.events)) {
           agent.session.append('rheostat/position', { position: target.position }, { ignorable: true })
         }
+        syncDialVisibility(agent, target.active)
         agent.inject(narration(change, detectLanguage(agent.session.events)))
         if (change.kind === 'off') {
           return { kind: 'success', text: 'Style dial turned off.' }

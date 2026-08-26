@@ -1036,6 +1036,9 @@ export class ToolRuntime extends Service {
    */
   register(definition: ToolDefinition): () => void {
     const name = definition.name
+    if (typeof name !== 'string' || name.length === 0) {
+      throw new TypeError(`tool name must be a non-empty string, got ${JSON.stringify(name)}`)
+    }
     const output = (definition as Partial<ToolDefinition>).output
     if (output === undefined || typeof output !== 'object'
       || typeof output.render !== 'function'

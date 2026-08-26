@@ -550,6 +550,9 @@ function assertRenderedContent(value: JsonValue): ContentBlock[] {
  */
 export function sandboxDefineTool(options: unknown): ToolDefinition {
   if (!isPlainRecord(options)) throw new Error('harness.defineTool options must be an object')
+  if (typeof options.name !== 'string' || options.name.length === 0) {
+    throw new Error('harness.defineTool needs a non-empty string tool name')
+  }
   const normalized = normalizeParameterSchemaSpec(options.parameters)
   if (!isPlainRecord(options.output)) {
     throw new Error('harness.defineTool output must declare { schema, render, presentationMeta? }')

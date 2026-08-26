@@ -100,6 +100,21 @@ describe('SystemPrompt', () => {
     expect(renderContextSnapshot(assembly)).toBe('Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\ncontext 1\n\ncontext 2')
   })
 
+  it('drops nameless schemas so a model request never carries an empty tool name', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, { persona: 'You are DeepSeek Harness.' })
+
+    ctx.systemPrompt.tools(() => ({
+      schemas: [
+        { name: 'echo', description: 'echo back', parameters: {} },
+        { name: '', description: 'nameless', parameters: {} },
+      ],
+    }))
+
+    const assembly = await ctx.systemPrompt.assemble()
+    expect(assembly.tools.map(tool => tool.name)).toEqual(['echo'])
+  })
+
   it('resolves section text providers against the assemble context, at each assemble call', async () => {
     // The context is HOW per-agent sections work (the loop passes { agent });
     // this spec stays agent-agnostic and smuggles a marker through a plain field.

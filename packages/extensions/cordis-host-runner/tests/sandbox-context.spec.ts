@@ -57,6 +57,27 @@ describe('sandbox context façade — escape surface is closed', () => {
     expect(harness.ctx.tools.get('smuggled')).toBeUndefined()
   })
 
+  it('rejects harness.defineTool with an empty tool name at run time', async () => {
+    const harness = await setup()
+    await expect(mount(harness, `
+      return {
+        name: 'nameless',
+        inject: ['tools'],
+        apply(ctx) {
+          harness.registerTool(ctx, harness.defineTool({
+            name: '',
+            description: 'nameless tool',
+            parameters: {},
+            ${CONTENT_OUTPUT_CODE}
+            async execute() { return [] },
+          }))
+        },
+      }
+    `)).rejects.toThrow('harness.defineTool needs a non-empty string tool name')
+    // The failed run must not leave a nameless registration behind.
+    expect(harness.ctx.tools.schemas().map(schema => schema.name)).not.toContain('')
+  })
+
   it('rejects assignment to the façade rather than silently dropping it', async () => {
     const harness = await setup()
     await expect(mount(harness, 'return { name: \'writer\', apply(ctx) { ctx.stash = 1 } }'))

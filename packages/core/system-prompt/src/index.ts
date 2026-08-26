@@ -492,11 +492,18 @@ export class SystemPrompt extends Service {
     const knownNames = new Set<string>()
     for (const provider of providers) {
       const result = provider(context)
-      const schemas = result.schemas.map(({ name, description, parameters }): ToolSchema => ({
-        name,
-        description,
-        parameters: structuredClone(parameters),
-      }))
+      // tools.register() already rejects empty names at the registration
+      // boundary; the filter here is a defense-in-depth floor for schemas
+      // that reach an assembly without passing through it (scope layers,
+      // provider-level construction), so a nameless tool can never enter a
+      // model request's tools list and invite repeated failed calls.
+      const schemas = result.schemas
+        .filter(tool => typeof tool.name === 'string' && tool.name.length > 0)
+        .map(({ name, description, parameters }): ToolSchema => ({
+          name,
+          description,
+          parameters: structuredClone(parameters),
+        }))
       const acceptedKnownNames = result.knownNames ?? schemas.map(tool => tool.name)
       collected.push(...schemas)
       for (const name of acceptedKnownNames) knownNames.add(name)

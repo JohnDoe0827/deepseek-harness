@@ -1975,6 +1975,14 @@ describe('ToolRuntime', () => {
       .toThrow('timeoutMs must be a positive finite number')
   })
 
+  it('rejects an empty or non-string tool name so a nameless tool never reaches a model request', async () => {
+    const ctx = await setup()
+    expect(() => ctx.tools.register({ ...echoTool, name: '' }))
+      .toThrow('tool name must be a non-empty string')
+    expect(() => ctx.tools.register({ ...echoTool, name: 42 } as unknown as typeof echoTool))
+      .toThrow('tool name must be a non-empty string')
+  })
+
   it('rejects duplicate names and unregisters on fiber dispose (HMR safety)', async () => {
     const ctx = await setup()
     ctx.tools.register(echoTool)

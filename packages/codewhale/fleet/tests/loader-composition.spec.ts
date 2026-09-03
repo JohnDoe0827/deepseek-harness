@@ -207,4 +207,30 @@ describe('codewhale-fleet real Loader composition', () => {
     expect(ledger(owner.session, 'fleet/run')).toHaveLength(0)
     expect(adapter?.calls ?? 0).toBe(0)
   }, 30_000)
+
+  it('/fleet status marks tick-observer reviews without losing reviewer rows', async () => {
+    const ctx = await boot([], '    tickMs: 50\n    maxTurnSeconds: 1\n    maxSilenceSeconds: 0\n    maxTurns: 2\n    maxRepeatedToolCalls: 0', [
+      '      - id: observer',
+      '        cadence: tick',
+      '        instructions: Watch for stalls and loops.',
+    ].join('\n'))
+    const owner = agent()
+    await ctx.commands.execute(owner, '/fleet run', new AbortController().signal)
+    // A reviewer-style row (no kind) and a tick-observer row (kind: observer)
+    // ride the same run; status must tell them apart.
+    owner.session.append('fleet/review', {
+      id: '1', role: 'reviewer', verdict: 'fix', feedback: 'add tests', chars: 9,
+    })
+    owner.session.append('fleet/review', {
+      id: '1', role: 'observer', verdict: 'fix', feedback: 'turn 1 exceeded the 1s budget', chars: 30, kind: 'observer',
+    })
+
+    const status = await ctx.commands.execute(owner, '/fleet', new AbortController().signal)
+    const text = (status?.result as { text?: string }).text ?? ''
+    expect(text).toContain('Run 1: 1 reviewer roles')
+    // The tick-observer row is marked so it cannot be mistaken for a reviewer.
+    expect(text).toContain('observer: fix (observer)')
+    // The reviewer row keeps its plain rendering.
+    expect(text).toContain('reviewer: fix (9 chars)')
+  }, 30_000)
 })

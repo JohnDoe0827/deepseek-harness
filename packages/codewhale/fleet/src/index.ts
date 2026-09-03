@@ -773,7 +773,10 @@ function fleetStatus(events: readonly SessionEvent[]): string {
       runs.set(event.data.id, { roles: event.data.roles, reviews: [] })
     } else if (event.type === 'fleet/review') {
       const run = runs.get(event.data.id)
-      run?.reviews.push(`${event.data.role}: ${event.data.verdict}${event.data.chars > 0 ? ` (${event.data.chars} chars)` : ''}`)
+      // A tick-observer review is marked so it cannot be mistaken for a
+      // reviewer pass; reviewers (kind absent) keep the plain rendering.
+      const source = event.data.kind === 'observer' ? ' (observer)' : ''
+      run?.reviews.push(`${event.data.role}: ${event.data.verdict}${source}${event.data.chars > 0 ? ` (${event.data.chars} chars)` : ''}`)
     } else if (event.type === 'fleet/end') {
       const run = runs.get(event.data.id)
       if (run !== undefined) run.end = event.data.reason

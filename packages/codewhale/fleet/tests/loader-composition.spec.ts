@@ -50,7 +50,7 @@ afterEach(async () => {
 })
 
 /** Boot a cordis.yml mounting the fleet plugin plus its consumed services. */
-async function boot(scripts: readonly string[]): Promise<Context> {
+async function boot(scripts: readonly string[], topConfig = '', rolesLines = '      - id: reviewer\n        label: Reviewer\n        instructions: Review the response against the task.'): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-fleet-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
@@ -65,10 +65,9 @@ async function boot(scripts: readonly string[]): Promise<Context> {
     '  config:',
     '    maxRounds: 2',
     '    maxTranscriptChars: 8000',
+    ...(topConfig === '' ? [] : topConfig.split('\n')),
     '    roles:',
-    '      - id: reviewer',
-    '        label: Reviewer',
-    '        instructions: Review the response against the task.',
+    ...rolesLines.split('\n'),
     '',
   ].join('\n'))
 

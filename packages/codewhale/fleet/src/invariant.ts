@@ -18,7 +18,9 @@ export const inject = ['invariants']
 /** The structured reviewer verdicts, as a runtime set for input narrowing. */
 const FLEET_VERDICTS = new Set(['pass', 'fix'])
 /** The run-closing reasons, as a runtime set for input narrowing. */
-const FLEET_END_REASONS = new Set(['clean', 'fixes-exhausted'])
+const FLEET_END_REASONS = new Set(['clean', 'fixes-exhausted', 'observer-triggered'])
+/** Observer-review discriminators. */
+const FLEET_REVIEW_KINDS = new Set(['observer'])
 
 /** Validate one fleet ledger event before it reaches the durable log. */
 function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
@@ -27,12 +29,13 @@ function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
     if (typeof id !== 'string' || id.length === 0) fail('fleet/run id must be a non-empty string')
     if (!Number.isSafeInteger(roles) || roles < 0) fail('fleet/run roles must be a non-negative safe integer')
   } else if (event.type === 'fleet/review') {
-    const { id, role, verdict, feedback, chars } = event.data
+    const { id, role, verdict, feedback, chars, kind } = event.data
     if (typeof id !== 'string' || id.length === 0) fail('fleet/review id must be a non-empty string')
     if (typeof role !== 'string' || role.length === 0) fail('fleet/review role must be a non-empty string')
     if (!FLEET_VERDICTS.has(verdict)) fail(`fleet/review carries unknown verdict ${JSON.stringify(verdict)}`)
     if (typeof feedback !== 'string') fail('fleet/review feedback must be a string')
     if (!Number.isSafeInteger(chars) || chars < 0) fail('fleet/review chars must be a non-negative safe integer')
+    if (kind !== undefined && !FLEET_REVIEW_KINDS.has(kind)) fail(`fleet/review carries unknown kind ${JSON.stringify(kind)}`)
   } else if (event.type === 'fleet/end') {
     const { id, reason } = event.data
     if (typeof id !== 'string' || id.length === 0) fail('fleet/end id must be a non-empty string')

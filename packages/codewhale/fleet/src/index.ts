@@ -30,6 +30,14 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 export const name = 'codewhale-fleet'
 export const inject = ['llm', 'agentDefaultModel']
 
+/** When a role runs its pass: at each turn stop (reviewer) or on the fleet's own clock (observer). */
+export type FleetCadence = 'turn-stopping' | 'tick'
+
+/** Runtime guard for the config boundary (JSON/toml input is not type-checked). */
+function isFleetCadence(value: unknown): value is FleetCadence {
+  return value === 'turn-stopping' || value === 'tick'
+}
+
 /** One reviewer role of a fleet: an independent model route plus standing instructions. */
 export interface FleetRoleConfig {
   /** Stable role id used in `fleet/review` events and diagnostics. */
@@ -44,6 +52,14 @@ export interface FleetRoleConfig {
   readonly model?: string
   /** Reasoning tier for the resolved route; must be supported by the model. */
   readonly reasoningEffort?: string
+  /**
+   * When this role runs. `turn-stopping` (default) reviews each completed
+   * turn. `tick` runs on the fleet's own clock and observes the *live* work:
+   * it evaluates deterministic budget rules (turn duration, silence, turn
+   * cap, repeated tool calls) before any model call, and records its
+   * interventions as `fleet/review` events with `kind: 'observer'`.
+   */
+  readonly cadence?: FleetCadence
 }
 
 /** Deployment-owned fleet configuration. */
@@ -57,6 +73,19 @@ export interface Config {
   maxRounds: number
   /** Byte cap for the assistant transcript sent to a reviewer. */
   maxTranscriptChars: number
+  /** Cadence for `tick` roles, in ms (default 1000). */
+  tickMs?: number
+  /**
+   * Maximum wall time one turn may run before a tick observer injects a
+   * reminder (level 1). `0` disables.
+   */
+  maxTurnSeconds?: number
+  /** Maximum wall time with no progress before a tick observer steers (level 2). `0` disables. */
+  maxSilenceSeconds?: number
+  /** Maximum turns before a tick observer cancels the agent (level 3). `0` disables. */
+  maxTurns?: number
+  /** Consecutive identical tool calls before a tick observer steers (level 2). `0` disables. */
+  maxRepeatedToolCalls?: number
 }
 
 /** Schemastery configuration for the fleet plugin. */
@@ -68,10 +97,16 @@ export const Config: z<Config> = z.object({
     provider: z.string(),
     model: z.string(),
     reasoningEffort: z.string(),
+    cadence: z.string(),
   })).required(),
   maxRounds: z.number().required(),
   maxTranscriptChars: z.number().required(),
-})
+  tickMs: z.number().default(1000),
+  maxTurnSeconds: z.number().default(0),
+  maxSilenceSeconds: z.number().default(0),
+  maxTurns: z.number().default(0),
+  maxRepeatedToolCalls: z.number().default(0),
+}) as z<Config>
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -81,17 +116,27 @@ declare module '@deepseek-ai/dsh-session/types' {
      */
     'fleet/run': { id: string; roles: number }
     /**
-     * One reviewer role completed one pass over the latest turn. `verdict`
-     * is the reviewer's structured conclusion; `feedback` is its text
-     * (empty only for a `pass` with no notes); `chars` is the raw reviewer
-     * output length.
+     * One fleet role completed one pass. For a `turn-stopping` reviewer
+     * (`kind` absent), `verdict` is the reviewer's structured conclusion and
+     * `feedback` its text. For a `tick` observer (`kind: 'observer'`),
+     * `verdict` is the deterministic rule outcome (`pass` = no rule tripped,
+     * `fix` = a budget rule tripped), `feedback` the delivered reminder, and
+     * `chars` the reason text length.
      */
-    'fleet/review': { id: string; role: string; verdict: 'pass' | 'fix'; feedback: string; chars: number }
+    'fleet/review': {
+      id: string
+      role: string
+      verdict: 'pass' | 'fix'
+      feedback: string
+      chars: number
+      kind?: 'observer'
+    }
     /**
      * A fleet run closed: `clean` when every reviewer passed a round,
-     * `fixes-exhausted` when `Config.maxRounds` review rounds produced fixes.
+     * `fixes-exhausted` when `Config.maxRounds` review rounds produced fixes,
+     * `observer-triggered` when a tick observer cancelled the agent.
      */
-    'fleet/end': { id: string; reason: 'clean' | 'fixes-exhausted' }
+    'fleet/end': { id: string; reason: 'clean' | 'fixes-exhausted' | 'observer-triggered' }
   }
 }
 
@@ -122,6 +167,9 @@ export function resolveConfig(config: Config): Config {
     if (role.label !== undefined && (typeof role.label !== 'string' || role.label.trim() === '')) {
       throw new Error(`FleetConfig role ${JSON.stringify(role.id)} label must be a non-empty string when set`)
     }
+    if (role.cadence !== undefined && !isFleetCadence(role.cadence)) {
+      throw new Error(`FleetConfig role ${JSON.stringify(role.id)} cadence must be 'turn-stopping' or 'tick'`)
+    }
   }
   if (!Number.isSafeInteger(config.maxRounds) || config.maxRounds <= 0) {
     throw new Error('FleetConfig `maxRounds` must be a positive integer')
@@ -129,9 +177,11 @@ export function resolveConfig(config: Config): Config {
   if (typeof config.maxTranscriptChars !== 'number' || !Number.isFinite(config.maxTranscriptChars) || config.maxTranscriptChars <= 0) {
     throw new Error('FleetConfig `maxTranscriptChars` must be a positive number')
   }
-  const unknown = Object.keys(config).filter(key => key !== 'roles' && key !== 'maxRounds' && key !== 'maxTranscriptChars')
+  const unknown = Object.keys(config).filter(key => ![
+    'roles', 'maxRounds', 'maxTranscriptChars', 'tickMs', 'maxTurnSeconds', 'maxSilenceSeconds', 'maxTurns', 'maxRepeatedToolCalls',
+  ].includes(key))
   if (unknown.length > 0) {
-    throw new Error(`FleetConfig has unknown key(s) ${unknown.join(', ')} — config is { roles, maxRounds, maxTranscriptChars }`)
+    throw new Error(`FleetConfig has unknown key(s) ${unknown.join(', ')}`)
   }
   return config
 }
@@ -257,6 +307,200 @@ export function parseReview(text: string): { verdict: 'pass' | 'fix'; feedback: 
   return { verdict: 'fix', feedback: text.trim() === '' ? '(no feedback provided)' : text }
 }
 
+/** The tick-observable rule that fired; one per notice. */
+type ObserverRuleId = 'turn-budget' | 'silence-budget' | 'turn-cap' | 'repeated-tool'
+
+/** Per-session state the fleet-owned tick observer derives from the durable log. */
+interface ObserverSessionState {
+  activeTurn: number | undefined
+  activeTurnStartedAt: number | undefined
+  lastProgressAt: number
+  turnCount: number
+  repeatKey: string | undefined
+  repeatCount: number
+  fired: Set<ObserverRuleId>
+  cancelledOnce: boolean
+}
+
+/** True if this durable event is evidence of progress (fleet/observer bookkeeping is not). */
+function isProgressEvent(event: SessionEvent): boolean {
+  switch (event.type) {
+    case 'todo/write':
+    case 'request/header':
+    case 'request/context':
+    case 'session/end-seed':
+      return false
+    case 'user/message':
+      // A plugin-injected message (a fleet steer or observer reminder) is not
+      // the worker making progress; only a direct user prompt counts.
+      return event.data.source.kind !== 'plugin'
+    default:
+      return true
+  }
+}
+
+/** Canonical identity of one tool-call execution for the repeat chain (deep-sorted args). */
+function canonicalToolKey(name: string, argumentsValue: unknown): string {
+  return JSON.stringify([name, sortJsonValue(argumentsValue)])
+}
+
+/** Deep key-sort a parsed-JSON value so property order does not break the chain key. */
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue)
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const sorted: Record<string, unknown> = {}
+    for (const key of Object.keys(record).sort()) sorted[key] = sortJsonValue(record[key])
+    return sorted
+  }
+  return value
+}
+
+/** Parse one `tool/call` raw arguments string for the canonical chain; malformed stays as the raw string. */
+function safeParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
+}
+
+/** An observer verdict: `pass` = no rule tripped, `fix` = a budget rule tripped. */
+interface ObserverVerdict {
+  role: string
+  rule: ObserverRuleId
+  reason: string
+  feedback: string
+  level: 1 | 2 | 3
+}
+
+/**
+ * Evaluate the deterministic tick-observer rules against one session's
+ * observed state. Returns the strongest tripped rule, else `undefined`.
+ */
+function evaluateObserver(
+  state: ObserverSessionState,
+  cfg: Config,
+  now: number,
+  runId: string,
+  roles: FleetRoleConfig[],
+): ObserverVerdict | undefined {
+  const enabled = (value: number | undefined): value is number =>
+    value !== undefined && Number.isFinite(value) && value > 0
+  const role = roles[0]
+  if (role === undefined) return undefined
+
+  const candidates: ObserverVerdict[] = []
+  const turn = state.activeTurn
+  const turnStart = state.activeTurnStartedAt
+
+  if (
+    turn !== undefined && turnStart !== undefined
+    && !state.fired.has('turn-budget') && enabled(cfg.maxTurnSeconds)
+    && now - turnStart > cfg.maxTurnSeconds * 1000
+  ) {
+    candidates.push({
+      role: role.id,
+      rule: 'turn-budget',
+      level: 1,
+      reason: `turn ${turn} ran ${Math.round((now - turnStart) / 1000)}s (budget ${cfg.maxTurnSeconds}s)`,
+      feedback: `Fleet observer: turn ${turn} exceeded the ${cfg.maxTurnSeconds}s budget. If blocked, say so explicitly or change approach.`,
+    })
+  }
+
+  if (
+    !state.fired.has('silence-budget') && enabled(cfg.maxSilenceSeconds)
+    && now - state.lastProgressAt > cfg.maxSilenceSeconds * 1000 && state.turnCount > 0
+  ) {
+    const silent = Math.round((now - state.lastProgressAt) / 1000)
+    candidates.push({
+      role: role.id,
+      rule: 'silence-budget',
+      level: 2,
+      reason: `no progress for ${silent}s (budget ${cfg.maxSilenceSeconds}s)`,
+      feedback: `Fleet observer: no progress for ${silent}s. Report concrete next steps or the blocking condition.`,
+    })
+  }
+
+  if (!state.fired.has('turn-cap') && enabled(cfg.maxTurns) && state.turnCount >= cfg.maxTurns) {
+    candidates.push({
+      role: role.id,
+      rule: 'turn-cap',
+      level: 3,
+      reason: `session reached ${cfg.maxTurns} turns`,
+      feedback: `Fleet observer: session reached the ${cfg.maxTurns}-turn cap; stopping run ${runId}.`,
+    })
+  }
+
+  if (
+    !state.fired.has('repeated-tool') && enabled(cfg.maxRepeatedToolCalls)
+    && state.repeatCount >= cfg.maxRepeatedToolCalls
+  ) {
+    candidates.push({
+      role: role.id,
+      rule: 'repeated-tool',
+      level: 2,
+      reason: `same tool call repeated ${state.repeatCount}×`,
+      feedback: `Fleet observer: the identical tool call repeated ${state.repeatCount}×. Choose a different action or change approach.`,
+    })
+  }
+
+  if (candidates.length === 0) return undefined
+  candidates.sort((a, b) => b.level - a.level)
+  return candidates[0]
+}
+
+/**
+ * Deliver one observer verdict: record the durable `fleet/review` event and
+ * intervene at the verdict's strength — level 1 inject (remind), level 2
+ * steer (redirect), level 3 cancel + `fleet/end` (`observer-triggered`).
+ */
+function observerIntervene(
+  session: Session,
+  agent: Agent,
+  state: ObserverSessionState,
+  verdict: ObserverVerdict,
+): void {
+  state.fired.add(verdict.rule)
+  session.append('fleet/review', {
+    id: activeFleetRun(session.events)?.id ?? '',
+    role: verdict.role,
+    // Any tripped rule is a `fix` verdict: the observer asked the worker to
+    // change approach. `pass` is reserved for an evaluation where no rule
+    // tripped (which this function never receives).
+    verdict: 'fix',
+    feedback: verdict.feedback,
+    chars: verdict.reason.length,
+    kind: 'observer',
+  })
+  const message = createUserMessage({
+    content: [{ type: 'text', text: verdict.feedback }],
+    source: {
+      kind: 'plugin',
+      plugin: 'codewhale-fleet',
+      form: 'notice',
+      summary: `Fleet observer ${verdict.rule} @${verdict.level}`,
+    },
+  })
+  if (verdict.level === 3) {
+    if (!state.cancelledOnce) {
+      state.cancelledOnce = true
+      agent.cancel({ kind: 'hook', reason: `observer ${verdict.rule}: ${verdict.reason}` })
+    }
+    // The cancellation is announced before the worker converges; the run ends
+    // observer-triggered so status/resume reflect the observer's decision.
+    const run = activeFleetRun(session.events)
+    if (run !== undefined) session.append('fleet/end', { id: run.id, reason: 'observer-triggered' })
+  } else if (verdict.level === 2) {
+    if (!state.cancelledOnce) {
+      state.cancelledOnce = true
+      agent.steer(message)
+    }
+  } else {
+    agent.inject(message)
+  }
+}
+
 /**
  * Register the fleet plugin: the `agent/turn-stopping` review hook and the
  * `/fleet` command.
@@ -269,6 +513,29 @@ export function apply(ctx: Context, config: Config): void {
   // twice while a steered fix re-opens the same turn. Weak keys: disposed
   // sessions drop their tracking automatically.
   const lastReviewedStep = new WeakMap<Session, number>()
+  // Per-session tick-observer state (fleet-owned clock facts).
+  const observerState = new WeakMap<Session, ObserverSessionState>()
+  const observedSessions = new Set<Session>()
+  const tickRoles = cfg.roles.filter(role => role.cadence === 'tick')
+
+  function observerFor(session: Session): ObserverSessionState {
+    let state = observerState.get(session)
+    if (state === undefined) {
+      state = {
+        activeTurn: undefined,
+        activeTurnStartedAt: undefined,
+        lastProgressAt: Date.now(),
+        turnCount: 0,
+        repeatKey: undefined,
+        repeatCount: 0,
+        fired: new Set(),
+        cancelledOnce: false,
+      }
+      observerState.set(session, state)
+      observedSessions.add(session)
+    }
+    return state
+  }
 
   /** The resolved LLM route for one role: its own route, else the session default. */
   function routeFor(role: FleetRoleConfig): LlmCallConfig {
@@ -305,6 +572,8 @@ export function apply(ctx: Context, config: Config): void {
     const transcript = latestAssistantText(session.events, cfg.maxTranscriptChars)
     let firstFix: { role: FleetRoleConfig; feedback: string } | undefined
     for (const role of cfg.roles) {
+      // Tick observers evaluate on their own clock, not at the turn boundary.
+      if (role.cadence === 'tick') continue
       // Cancellation during the reviewer call is handled inside reviewWith
       // (prepareCall and the chunk loop honor the signal).
       const outcome = await reviewWith(role, task, transcript, signal)
@@ -377,6 +646,61 @@ export function apply(ctx: Context, config: Config): void {
     const step = latestStep(agent.session.events)
     if (step === undefined || lastReviewedStep.get(agent.session) === step) return
     await reviewTurn(agent, step, signal)
+  })
+
+  // ---- tick observer: fleet-owned clock over live worker facts ----
+  // Fact stream: durable session events update per-session observer state.
+  ctx.effect(function* () {
+    ctx.on('session/event', (session: Session, event: SessionEvent) => {
+      const state = observerFor(session)
+      switch (event.type) {
+        case 'turn/start':
+          state.activeTurn = event.data.turn
+          state.activeTurnStartedAt = Date.now()
+          state.turnCount += 1
+          state.fired.clear()
+          return
+        case 'turn/end':
+          state.activeTurn = undefined
+          state.activeTurnStartedAt = undefined
+          return
+        case 'tool/call': {
+          const key = canonicalToolKey(event.data.name, safeParse(event.data.arguments))
+          state.repeatCount = state.repeatKey === key ? state.repeatCount + 1 : 1
+          state.repeatKey = key
+          return
+        }
+        default:
+          if (isProgressEvent(event)) state.lastProgressAt = Date.now()
+          return
+      }
+    })
+    ctx.on('agent/created', ({ agent }) => { observerFor(agent.session) })
+    ctx.on('agent/disposed', ({ agent }) => {
+      observedSessions.delete(agent.session)
+      observerState.delete(agent.session)
+    })
+
+    if (tickRoles.length > 0) {
+      // The agents registry is optional and may mount after this plugin. Read
+      // it lazily each tick so a loop composed later is still observed.
+      const timer = setInterval(() => {
+        const agents = ctx.get('agents')
+        const now = Date.now()
+        for (const session of Array.from(observedSessions)) {
+          const agent = agents?.get(session.id)
+          if (agent === undefined || agent.session !== session) continue
+          const state = observerState.get(session)
+          if (state === undefined || state.cancelledOnce) continue
+          const run = activeFleetRun(session.events)
+          if (run === undefined) continue
+          const verdict = evaluateObserver(state, cfg, now, run.id, tickRoles)
+          if (verdict === undefined) continue
+          observerIntervene(session, agent, state, verdict)
+        }
+      }, Math.max(10, cfg.tickMs ?? 1000))
+      yield () => { clearInterval(timer) }
+    }
   })
 
   // The command child activates only when a command registry is composed.

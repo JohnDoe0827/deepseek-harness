@@ -45,6 +45,8 @@ export interface ContextHandoffNoticeData {
   ratio: number
   /** Human-readable boundary fact, e.g. `612340 >= 600000 (0.6 of 1000000)`. */
   reason: string
+  /** Handoff cycle number: 0 for the first session, incremented by the next session's config. */
+  cycle: number
 }
 
 /** Deployment-owned config: the single pressure boundary and cadence. */
@@ -53,11 +55,14 @@ export interface Config {
   tickMs?: number
   /** Fraction of the routed model's context window that trips a handoff (default 0.6). */
   thresholdRatio?: number
+  /** Handoff cycle number; the fresh session config sets it one past the previous session's last notice (default 0). */
+  cycle?: number
 }
 
 export const Config: z<Config> = z.object({
   tickMs: z.number().default(10_000),
   thresholdRatio: z.number().default(0.6),
+  cycle: z.number().default(0),
 })
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -90,7 +95,7 @@ function targetKey(
 }
 
 /** Resolved plugin configuration: defaults applied, all fields concrete. */
-type ResolvedConfig = { tickMs: number; thresholdRatio: number }
+type ResolvedConfig = { tickMs: number; thresholdRatio: number; cycle: number }
 
 /**
  * Register the context-handoff observer: a clock that measures live session
@@ -100,7 +105,11 @@ type ResolvedConfig = { tickMs: number; thresholdRatio: number }
  * @param config - deployment-owned handoff threshold config.
  */
 export function apply(ctx: Context, config: Config): void {
-  const cfg: ResolvedConfig = { tickMs: config.tickMs ?? 10_000, thresholdRatio: config.thresholdRatio ?? 0.6 }
+  const cfg: ResolvedConfig = {
+    tickMs: config.tickMs ?? 10_000,
+    thresholdRatio: config.thresholdRatio ?? 0.6,
+    cycle: config.cycle ?? 0,
+  }
   ctx.effect(function* () {
     const states = new WeakMap<Session, ObserverState>()
     // Model capacity is a per-target constant; resolve once and reuse.
@@ -138,11 +147,11 @@ export function apply(ctx: Context, config: Config): void {
             if (window === undefined || window <= 0) return
             const threshold = Math.floor(window * cfg.thresholdRatio)
             windows.set(key, { window, threshold })
-            check(agent, state, measurement, key, window, threshold, cfg.thresholdRatio)
+            check(agent, state, measurement, key, window, threshold, cfg.thresholdRatio, cfg.cycle)
           }).catch(() => { /* a transient model-info failure defers to the next tick */ })
           continue
         }
-        check(agent, state, measurement, key, cap.window, cap.threshold, cfg.thresholdRatio)
+        check(agent, state, measurement, key, cap.window, cap.threshold, cfg.thresholdRatio, cfg.cycle)
       }
     }, cfg.tickMs)
 
@@ -163,6 +172,7 @@ function check(
   window: number,
   threshold: number,
   ratio: number,
+  cycle: number,
 ): void {
   if (state.fired || measurement.totalTokens < threshold) return
   state.fired = true
@@ -174,13 +184,17 @@ function check(
     thresholdTokens: threshold,
     ratio,
     reason,
+    cycle,
   })
+  const nextCycle = cycle + 1
   const message = createUserMessage({
     content: [{
       type: 'text',
-      text: `Context bloat detected: session pressure ${measurement.totalTokens} tokens reached the handoff threshold `
-        + `${threshold} (${ratio} of ${window} window for ${key}). Load the dsh-context-handoff skill and run its `
-        + 'flow: back up the project and conversation, write HANDOFF-<topic>.md, then tell the user to open a fresh session.',
+      text: `Context bloat detected (handoff cycle ${cycle}): session pressure ${measurement.totalTokens} tokens reached the `
+        + `handoff threshold ${threshold} (${ratio} of ${window} window for ${key}). Load the dsh-context-handoff skill and run `
+        + 'its flow: back up the project and conversation, write HANDOFF-<topic>.md, then tell the user to open a fresh '
+        + `session. The fresh session must mount this observer and the dsh-observer guard with cycle = ${nextCycle} so the `
+        + 'monitoring loop continues.',
     }],
     source: {
       kind: 'plugin',

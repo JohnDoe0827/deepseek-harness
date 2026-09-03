@@ -106,6 +106,22 @@ describe('dsh-context-handoff observer', () => {
     expect(JSON.stringify(payload?.content ?? '')).toContain('dsh-context-handoff')
   })
 
+  it('records the handoff cycle and tells the fresh session to restore monitoring', async () => {
+    const { agent } = await harness({ tickMs: 50, thresholdRatio: 0.6, cycle: 2 })
+    const injected = vi.spyOn(agent, 'inject')
+    bloatSession(agent)
+    await vi.advanceTimersByTimeAsync(200)
+
+    const notice = handoffs(agent)[0]!
+    expect(notice.cycle).toBe(2)
+    const payload = injected.mock.calls[0]?.[0]
+    const text = JSON.stringify(payload?.content ?? '')
+    // The reminder names the next cycle so the fresh session bumps the config.
+    expect(text).toContain('cycle 2')
+    expect(text).toContain('cycle = 3')
+    expect(text).toContain('monitoring loop continues')
+  })
+
   it('fires at most once per session even while pressure keeps rising', async () => {
     const { agent } = await harness({ tickMs: 50, thresholdRatio: 0.6 })
     bloatSession(agent)

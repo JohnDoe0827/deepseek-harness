@@ -172,6 +172,31 @@ describe('observer rule evaluation', () => {
     expect(abortedByObserver).toBe(true)
   })
 
+  it('cedes to a context handoff: no observer intervention after a durable context/handoff', async () => {
+    const { ctx, agent } = await harness(_options => silentHangScript(_options), turnBudgetOnlyConfig())
+    contexts.push(ctx)
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'do the slow thing' }], source: { kind: 'user' } }))
+
+    // The owner requests a verbatim handoff; the handoff flow owns termination.
+    agent.session.append('context/handoff', {
+      target: 'mock/mock',
+      totalTokens: 800,
+      contextWindow: 1000,
+      thresholdTokens: 600,
+      ratio: 0.6,
+      reason: '800 >= 600 (0.6 of 1000)',
+      cycle: 3,
+    })
+
+    // Even as the turn budget (1s) long expires, the observer stays silent.
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(noticeData(agent)).toHaveLength(0)
+
+    agent.cancel({ kind: 'parent' })
+    await vi.advanceTimersByTimeAsync(50)
+  })
+
   it('steers on repeated identical tool calls', async () => {
     // The model requests the same tool call 4 times; the repeat chain fires at
     // maxRepeatedToolCalls=2 and steers (level 2). A MockAdapter script array

@@ -89,6 +89,14 @@ declare module '@deepseek-ai/dsh-session/types' {
      * reconstructable from this event.
      */
     'observer/notice': ObserverNoticeData
+    /**
+     * A context-bloat handoff request (owned by `@deepseek-ai/dsh-context-handoff`).
+     * The observer cedes intervention once this event appears; the payload is
+     * opaque here because the observer only reacts to its existence, and its
+     * full shape belongs to the owning package.
+     * @mode durable.
+     */
+    'context/handoff': Record<string, unknown>
   }
 }
 
@@ -108,6 +116,8 @@ interface ObserverState {
   fired: Set<ObserverRuleId>
   /** Whether this session is currently stopped by the observer (notice sent). */
   cancelledOnce: boolean
+  /** Whether a context handoff was requested (durable `context/handoff`): the handoff flow owns the termination, so the observer cedes. */
+  handoffRequested: boolean
 }
 
 const PLUGIN_SOURCE = { kind: 'plugin' as const, plugin: 'observer' }
@@ -292,6 +302,7 @@ export function apply(ctx: Context, config: Config): void {
         repeatCount: 0,
         fired: new Set(),
         cancelledOnce: false,
+        handoffRequested: false,
       }
       states.set(session, state)
       sessions.add(session)
@@ -318,6 +329,14 @@ export function apply(ctx: Context, config: Config): void {
           const key = canonicalToolKey(event.data.name, safeParse(event.data.arguments))
           state.repeatCount = state.repeatKey === key ? state.repeatCount + 1 : 1
           state.repeatKey = key
+          return
+        }
+        case 'context/handoff': {
+          // The context-bloat handoff flow owns the session's termination
+          // from here: back up, write the handoff note, prompt the fresh
+          // session. The observer cedes further intervention so it cannot
+          // cancel or steer a session the user chose to hand off verbatim.
+          state.handoffRequested = true
           return
         }
         default:
@@ -348,8 +367,9 @@ export function apply(ctx: Context, config: Config): void {
         const state = states.get(session)
         // Evaluate always: turn-budget/silence only bite during an active
         // turn (they guard on activeTurn), while turn-cap must fire at the
-        // turn boundary too, not only mid-turn.
-        if (state === undefined || state.cancelledOnce) continue
+        // turn boundary too, not only mid-turn. A session past its handoff
+        // request is owned by the handoff flow, so the observer cedes.
+        if (state === undefined || state.cancelledOnce || state.handoffRequested) continue
         const verdict = evaluate(state, cfg, now())
         if (verdict !== undefined) {
           intervene(state, agent, verdict.level, verdict.rule, verdict.reason, verdict.text)

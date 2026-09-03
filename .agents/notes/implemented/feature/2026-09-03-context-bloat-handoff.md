@@ -55,6 +55,14 @@ The harness now has a first-class signal for "this session is past comfortable w
 - **In-memory state only** — `fired` is keyed by the live `Session`; a resumed session re-arms the threshold.
 - The plugin and skill share the name by design: the plugin's reminder tells the agent to load the skill, and the skill is the only surface that knows the exact backup/export steps.
 
+## The sustained loop
+
+The two observers compose into a cycle instead of one-shot fire: `dsh-observer` guards each session's hygiene (stalls, loops, budgets) and `dsh-context-handoff` guards its lifespan (bloat). On a handoff:
+
+- The handoff notice carries `cycle` (a `Config` field, default 0). The fresh session mounts `dsh-context-handoff` with `cycle` bumped one past the last notice, so the durable record sequences generations.
+- `dsh-observer` consumes the durable `context/handoff` event and **cedes**: `handoffRequested` per-session state stops all further observer intervention, because the handoff flow now owns termination. The hygiene guard cannot cancel or steer a session the owner chose to hand off verbatim.
+- The reminder text (and the `dsh-context-handoff` skill's "Sustain the monitoring loop" section) tells the agent and the fresh session to restore both plugins with the bumped cycle, keeping the loop alive across as many generations as the work needs.
+
 ## Testing
 
-`packages/guard/context-handoff/tests/context-handoff.spec.ts` (3 tests, fake timers + a real AgentLoop and real TokenMeter): crossing the threshold appends a durable notice with the right fields and injects a reminder naming the skill; a session fires at most once across repeated ticks; a session below the threshold stays silent. `invariant.spec.ts` (3 tests) covers the measure-then-notice invariant (accepts at/above threshold, rejects below, ignores unrelated events). Guards: `tsc -b tsconfig.host.json`, `oxlint packages/guard/context-handoff`, `build:lib:host` (the package builds to `lib/`), `verify-package-invariants` (the companion registers), and `verify-skill-invocation-metadata` (the skill pair aligns) all pass.
+`packages/guard/context-handoff/tests/context-handoff.spec.ts` (4 tests, fake timers + a real AgentLoop and real TokenMeter): crossing the threshold appends a durable notice with the right fields and injects a reminder naming the skill; the cycle is recorded and the reminder names the next cycle for the fresh session; a session fires at most once across repeated ticks; a session below the threshold stays silent. `observer.spec.ts` gains a cede test: after a durable `context/handoff`, the observer stays silent even when a budget rule would otherwise fire. `invariant.spec.ts` (3 tests) covers the measure-then-notice invariant (accepts at/above threshold, rejects below, ignores unrelated events). Guards: `tsc -b tsconfig.host.json`, `oxlint packages/guard/observer packages/guard/context-handoff`, `build:lib:host` (the package builds to `lib/`), `verify-package-invariants` (the companion registers), and `verify-skill-invocation-metadata` (the skill pair aligns) all pass.

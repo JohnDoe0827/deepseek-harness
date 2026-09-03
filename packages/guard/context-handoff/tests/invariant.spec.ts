@@ -32,6 +32,7 @@ describe('context-handoff invariant', () => {
         thresholdTokens: 600,
         ratio: 0.6,
         reason: '600 >= 600 (0.6 of 1000)',
+        cycle: 0,
       })
     }).not.toThrow()
   })
@@ -47,6 +48,7 @@ describe('context-handoff invariant', () => {
         thresholdTokens: 600,
         ratio: 0.6,
         reason: '599 < 600',
+        cycle: 0,
       })
     }).toThrow(expect.objectContaining<Partial<InvariantError>>({
       code: 'INVARIANT',

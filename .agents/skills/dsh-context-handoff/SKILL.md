@@ -84,13 +84,21 @@ Create `HANDOFF-<topic>.md` in the backups directory (never inside the repo; the
 
 Every commit referenced in the table must exist (`git log --oneline` to confirm) and every file path must resolve (`test -f` / `test -d`).
 
+## Sustain the monitoring loop
+
+The handoff is one cycle of a continuing loop: `dsh-observer` guards the session's hygiene (stalls, loops, budgets) and `@deepseek-ai/dsh-context-handoff` watches its lifespan (bloat). After the handoff, the fresh session **restores both** so the loop continues at the next cycle:
+
+- **Cycle number** — the handoff event carries `cycle` (0 for the first session). The fresh session's `dsh-context-handoff` config sets `cycle: <handoff cycle + 1>`, so the durable record tracks how many generations the loop has survived. Record the cycle in the note's 环境备注 and in the fresh-session prompt.
+- **Monitoring restore** — the note's 若继续 section states the exact cordis.yml entries the fresh session must mount: `@deepseek-ai/dsh-observer` (hygiene budgets, unchanged) plus `@deepseek-ai/dsh-context-handoff` with the bumped `cycle`. The fresh session inherits the same `thresholdRatio` so the bloat line does not drift between generations.
+- **Backup naming carries the cycle** — `HANDOFF-<topic>.md` and the exported JSONL stay unchanged in name (the note is the stable rendezvous point), but the note records the cycle so a reader can sequence generations.
+
 ## Prompt the fresh session
 
-End with a short, self-contained handoff message the user can paste into the fresh session — one line of objective + the handoff note path:
+End with a short, self-contained handoff message the user can paste into the fresh session — one line of objective + the handoff note path, plus the restore line:
 
-> 读取 /home/lwss/backups/HANDOFF-<topic>.md 和 <session>-conversation.jsonl，继续 <topic> 工作。
+> 读取 /home/lwss/backups/HANDOFF-<topic>.md 和 <session>-conversation.jsonl，继续 <topic> 工作；挂载 dsh-observer + dsh-context-handoff(cycle: N)，恢复监控循环。
 
-Keep the message is 2–3 lines: read the two files, continue the objective. Do not dump backup paths into it; the note holds them.
+Keep the message is 2–3 lines: read the two files, continue the objective, restore the monitoring loop. Do not dump backup paths into it; the note holds them.
 
 ## Guardrails
 

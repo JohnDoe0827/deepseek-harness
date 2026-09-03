@@ -11,15 +11,19 @@ This plugin deliberately does not compact and does not touch the filesystem. It 
   config:
     tickMs: 10000          # default; observer's own evaluation cadence
     thresholdRatio: 0.6    # default; fraction of contextWindow that trips a handoff
+    cycle: 0               # default; handoff cycle number, bumped by each fresh session
 ```
 
 - `tickMs` — how often the observer re-measures live sessions (ms).
 - `thresholdRatio` — the pressure fraction of the routed model's `contextWindow` that trips one `context/handoff` notice. With a 1M-token window and the default `0.6`, the boundary is 600k tokens.
+- `cycle` — the handoff generation. The first session runs 0; each fresh session sets it one past the last notice (`handoff cycle + 1`), so the durable record sequences how many generations the monitoring loop has survived.
 
 The boundary is `Math.floor(contextWindow * thresholdRatio)`. The adapted model must expose its `contextWindow` (`resolveModelInfo`); targets without disclosed capacity are skipped until one is configured.
 
 ## Semantics
 
+- **The monitoring loop.** `dsh-observer` guards session hygiene (stalls, loops, budgets) and this observer guards session lifespan (bloat). On a handoff, the durable `context/handoff` notice records the cycle; the fresh session mounts both plugins with `cycle` bumped, so the loop continues across generations. The reminder text tells the agent exactly that.
+- **The observer cedes on handoff.** `dsh-observer` consumes the durable `context/handoff` event and stops intervening for that session: once the owner chose a verbatim handoff, the handoff flow owns termination and the hygiene guard cannot cancel or steer against it.
 - **Measure then notice, once per session.** The observer measures with `ctx.tokenMeter.measure(session)` and only appends `context/handoff` when `totalTokens >= thresholdTokens`. Each session trips at most once (`fired` per-session state, dropped on disposal), so the observer never hammers a bloated session with repeated reminders.
 - **The durable notice is the record of the reminder.** The injected message text is reconstructable from the `context/handoff` event's fields (target, totals, threshold, ratio, reason), satisfying model-visible ⟺ logged.
 - **Model capacity is resolved once per target.** `resolveModelInfo` gives the routed model's `contextWindow`; the resulting threshold is cached per `provider/model` key instead of queried every tick.

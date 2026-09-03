@@ -26,6 +26,7 @@ Config values are plain numbers; every rule is disabled cleanly by setting it to
 ## Semantics
 
 - **The observer is per-session and in-memory.** It keys rule state by the live `Session` (a `WeakMap`), so a disposed session drops its state automatically and a resumed session starts fresh.
+- **The observer cedes on a context handoff.** A durable `context/handoff` event (owned by `@deepseek-ai/dsh-context-handoff`) marks the session as handed off: the observer stops all further intervention for it, because the handoff flow now owns termination. Together the two guards form a loop — `dsh-observer` for hygiene, `dsh-context-handoff` for lifespan, and the durable `cycle` in the notice sequencing generations across sessions.
 - **Rules fire once per active turn.** After a rule fires for a turn, it will not fire again until the next `turn/start`. This prevents the tick from hammering the agent with the same notice.
 - **Progress is measured from durable events.** Every `session/event` except `todo/write`, `request/header`, `request/context`, and `session/end-seed` counts as progress and refreshes the silence budget. A real stall therefore produces no progress events and eventually trips the silence rule.
 - **The repeat chain is derived from `tool/call`** — the raw `arguments` JSON string is deep key-sorted into a canonical key, so argument objects differing only in property order count as identical. A call identical to the previous tracked call increments the run; a different call resets it.

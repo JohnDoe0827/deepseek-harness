@@ -1,0 +1,4 @@
+interface:
+  display_name: "DSH Context Handoff"
+  short_description: "Detect context bloat, back up the project and conversation, and hand off to a fresh session"
+  default_prompt: "Use $dsh-context-handoff when this session is bloated (context or budget pressure) and the work must continue verbatim in a fresh session."

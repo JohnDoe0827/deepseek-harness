@@ -187,6 +187,8 @@ describe('observer rule evaluation', () => {
       ratio: 0.6,
       reason: '800 >= 600 (0.6 of 1000)',
       cycle: 3,
+      backupDir: '/tmp/dsh-handoff-test',
+      notePath: '/tmp/dsh-handoff-test/HANDOFF-t.md',
     })
 
     // Even as the turn budget (1s) long expires, the observer stays silent.

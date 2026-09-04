@@ -7,6 +7,8 @@ description: Use when a worked session is approaching its context or output budg
 
 Hand off a bloated session to a fresh one **without losing the record**: the project is backed up with full history, the conversation is exported verbatim, and a handoff note tells the next session exactly where work stands. This is the durable alternative to compaction when the complete transcript or repository must survive byte-for-byte.
 
+**The plugin does this automatically.** When `@deepseek-ai/dsh-context-handoff` is mounted, it detects the bloat boundary, runs the backup (bundle + tarball + JSONL export), writes the handoff note, records the durable `context/handoff` notice, and injects the fresh-session reminder — the agent does not have to drive the flow. This skill is the **manual fallback**: use it when the plugin is not mounted, a backup step failed (the notice's `error` field says so), or the deployment needs a hand-run backup for a reason the plugin's `backupRunner` cannot cover.
+
 Read [the session-telemetry note](../../notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md) and the [observer note](../../notes/implemented/feature/2026-08-29-timeline-independent-agent-observer.md) before judging bloat: the session log is the authoritative record, and the token meter prices what a fresh request would actually send.
 
 ## Detect bloat

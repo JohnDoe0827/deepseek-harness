@@ -33,6 +33,8 @@ describe('context-handoff invariant', () => {
         ratio: 0.6,
         reason: '600 >= 600 (0.6 of 1000)',
         cycle: 0,
+        backupDir: '/tmp/dsh-handoff-test',
+        notePath: '/tmp/dsh-handoff-test/HANDOFF-t.md',
       })
     }).not.toThrow()
   })
@@ -49,6 +51,8 @@ describe('context-handoff invariant', () => {
         ratio: 0.6,
         reason: '599 < 600',
         cycle: 0,
+        backupDir: '/tmp/dsh-handoff-test',
+        notePath: '/tmp/dsh-handoff-test/HANDOFF-t.md',
       })
     }).toThrow(expect.objectContaining<Partial<InvariantError>>({
       code: 'INVARIANT',

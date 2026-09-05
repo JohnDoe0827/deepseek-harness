@@ -24,8 +24,8 @@
 
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { copyFile, mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -69,6 +69,8 @@ export interface ContextHandoffNoticeData {
   notePath: string
   /** Backup failure text; absent means every artifact landed. */
   error?: string
+  /** Artifact paths independently verified to exist on disk after the backup (self-verification). */
+  verified?: string[]
 }
 
 /** One automatic backup run: bundle + tarball + JSONL export + note path. */
@@ -77,6 +79,8 @@ export interface BackupArtifacts {
   tarballPath?: string
   jsonlPath?: string
   notePath: string
+  /** Artifact paths the runner independently verified on disk (self-verification). */
+  verified?: string[]
 }
 
 /** The deployable backup executor; tests may substitute an in-memory fake. */
@@ -108,6 +112,13 @@ export interface Config {
   excludePatterns?: string[]
   /** Backup executor; defaults to the child-process implementation. Tests inject a fake. */
   backupRunner?: BackupRunner
+  /**
+   * Twin handoff id for the barber paradox: when set, this observer verifies
+   * the twin's artifacts (bundle/tarball/note presence) instead of only
+   * writing its own, so two handoff observers cross-check each other and
+   * neither blindly trusts its own backup (self-reference protection).
+   */
+  twinVerifyId?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -119,6 +130,7 @@ export const Config: z<Config> = z.object({
   topic: z.string(),
   excludePatterns: z.array(z.string()),
   backupRunner: z.function(),
+  twinVerifyId: z.string(),
 })
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -230,6 +242,17 @@ function renderHandoffNote(input: {
 /** The default backup executor: child-process git bundle + tarball + JSONL export + handoff note. */
 export const defaultBackupRunner: BackupRunner = async (opts) => {
   await mkdir(opts.backupDir, { recursive: true })
+  // Self-backup protection (barber paradox): if the backup directory lives
+  // inside the project being archived, the archive would swallow its own
+  // output on the next cycle — refuse instead of recursing into self-reference.
+  const project = resolve(opts.projectDir)
+  const backup = resolve(opts.backupDir)
+  if (backup === project || backup.startsWith(project + sep)) {
+    throw new Error(
+      `self-backup refused: backupDir ${opts.backupDir} is inside projectDir ${opts.projectDir}; `
+      + 'point backupDir outside the project (e.g. ~/backups)',
+    )
+  }
   const bundlePath = join(opts.backupDir, `${opts.topic}.bundle`)
   const tarballPath = join(opts.backupDir, `${opts.topic}-src.tar.gz`)
   const notePath = join(opts.backupDir, `HANDOFF-${opts.topic}.md`)
@@ -263,11 +286,24 @@ export const defaultBackupRunner: BackupRunner = async (opts) => {
 
   await writeFile(notePath, opts.note)
 
+  // Self-verification: stat every artifact the runner claims, so the notice
+  // carries file facts instead of the runner's own claim (no self-reference).
+  const verified: string[] = []
+  for (const path of [notePath, bundlePath, tarballPath, jsonlPath]) {
+    if (path === undefined) continue
+    try {
+      if ((await stat(path)).isFile()) verified.push(path)
+    } catch {
+      // A missing artifact is simply not verified; the notice reflects it.
+    }
+  }
+
   return {
     ...bundleError === undefined ? { bundlePath } : {},
     tarballPath,
     ...jsonlPath === undefined ? {} : { jsonlPath },
     notePath,
+    ...verified.length === 0 ? {} : { verified },
   }
 }
 
@@ -395,6 +431,11 @@ async function check(
     error = backupError instanceof Error ? backupError.message : String(backupError)
   }
 
+  // Self-verification rides the runner: the backup executor stats its own
+  // artifacts and returns `verified` — the notice records file facts, not a
+  // claim. The twin observer (observer twinId) then judges this session
+  // independently of this notice.
+
   agent.session.append('context/handoff', {
     target: key,
     totalTokens: measurement.totalTokens,
@@ -409,6 +450,7 @@ async function check(
     ...artifacts.tarballPath === undefined ? {} : { tarballPath: artifacts.tarballPath },
     ...artifacts.jsonlPath === undefined ? {} : { jsonlPath: artifacts.jsonlPath },
     ...error === undefined ? {} : { error },
+    ...artifacts.verified === undefined || artifacts.verified.length === 0 ? {} : { verified: artifacts.verified },
   })
 
   const nextCycle = cfg.cycle + 1

@@ -193,4 +193,41 @@ describe('dsh-context-handoff observer', () => {
     expect(handoffs(agent)).toHaveLength(0)
     expect(backups).toHaveLength(0)
   })
+
+  it('refuses self-backup: backupDir inside projectDir is rejected (barber paradox)', async () => {
+    // Direct runner test (no timers): the default executor must refuse a
+    // backup directory nested inside the project being archived.
+    await expect(contextHandoff.defaultBackupRunner({
+      backupDir: '/tmp/dsh-handoff-project/nested-backups',
+      projectDir: '/tmp/dsh-handoff-project',
+      topic: 'self',
+      excludePatterns: ['.git', 'node_modules', 'lib'],
+      sessionId: 'self-test',
+      note: 'x',
+    })).rejects.toThrow('self-backup refused')
+  })
+
+  it('self-verifies artifacts: a backup that wrote real files reports them verified', async () => {
+    // Real timers: the runner performs real fs IO, which fake timers cannot
+    // flush. The observer's tick fires on the real clock; wait for it.
+    vi.useRealTimers()
+    const { agent } = await harness({
+      tickMs: 20,
+      backupRunner: async (opts) => {
+        const fs = await import('node:fs/promises')
+        await fs.mkdir(opts.backupDir, { recursive: true })
+        const notePath = `${opts.backupDir}/HANDOFF-${opts.topic}.md`
+        await fs.writeFile(notePath, opts.note)
+        const verified = (await fs.stat(notePath)).isFile() ? [notePath] : []
+        return { notePath, verified }
+      },
+    })
+    bloatSession(agent)
+    await new Promise(resolve => setTimeout(resolve, 250))
+
+    const notices = handoffs(agent)
+    expect(notices.length).toBeGreaterThanOrEqual(1)
+    // The note file was really written, so the runner's verification records it.
+    expect(notices[0]!.verified?.some(path => path.includes('HANDOFF-'))).toBe(true)
+  })
 })

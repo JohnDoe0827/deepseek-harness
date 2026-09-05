@@ -19,11 +19,14 @@ Every intervention appends a durable `observer/notice` session event, so the log
     maxSilenceSeconds: 120    # default; no-progress budget before a level-2 steer
     maxTurns: 50              # default; session turn cap before a level-3 cancel
     maxRepeatedToolCalls: 3   # default; identical tool-call run before a level-2 steer
+    twinId: ''                # optional; twin agent id for the barber-paradox loop
 ```
 
 Config values are plain numbers; every rule is disabled cleanly by setting it to a non-finite or zero value (the plugin treats those as "no rule").
 
 ## Semantics
+
+- **Twin mode solves the barber paradox.** Set `twinId` to an agent id and this observer judges ONLY that agent — never its own host, never any other session. Two observers A and B with `twinId` pointing at each other form a closed mutual loop: A judges B, B judges A, and the judge is always external to the judged. Without `twinId`, the observer judges every session it sees (its own host included), which is the un-twin, self-referencing configuration.
 
 - **The observer is per-session and in-memory.** It keys rule state by the live `Session` (a `WeakMap`), so a disposed session drops its state automatically and a resumed session starts fresh.
 - **The observer cedes on a context handoff.** A durable `context/handoff` event (owned by `@deepseek-ai/dsh-context-handoff`) marks the session as handed off: the observer stops all further intervention for it, because the handoff flow now owns termination. Together the two guards form a loop — `dsh-observer` for hygiene, `dsh-context-handoff` for lifespan, and the durable `cycle` in the notice sequencing generations across sessions.

@@ -67,6 +67,15 @@ export interface Config {
   maxRepeatedToolCalls?: number
   /** Always inject the observer's standing-pattern reminders even when no rule fired yet. */
   enableStandingReminder?: boolean
+  /**
+   * Twin agent id for the barber paradox: when set, this observer mounts in
+   * twin mode and observes ONLY the named twin agent, never its own host.
+   * Two observers A and B with `twinId` pointing at each other form a closed
+   * mutual loop — A judges B, B judges A, and neither judges itself, so the
+   * judge is always independent of the judged (the classic two-barbers
+   * solution to self-reference).
+   */
+  twinId?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -76,6 +85,7 @@ export const Config: z<Config> = z.object({
   maxTurns: z.number().default(50),
   maxRepeatedToolCalls: z.number().default(3),
   enableStandingReminder: z.boolean().default(false),
+  twinId: z.string(),
 })
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -364,6 +374,11 @@ export function apply(ctx: Context, config: Config): void {
       for (const session of Array.from(sessions)) {
         const agent = ctx.agents.get(session.id)
         if (agent === undefined || agent.session !== session) continue
+        // Twin mode (barber paradox): a `twinId` narrows observation to that
+        // exact agent, so this observer judges only its twin and can never
+        // judge itself — the two observers form a closed mutual loop with the
+        // judge always external to the judged. Without a twin, observe all.
+        if (cfg.twinId !== undefined && String(agent.id) !== cfg.twinId) continue
         const state = states.get(session)
         // Evaluate always: turn-budget/silence only bite during an active
         // turn (they guard on activeTurn), while turn-cap must fire at the

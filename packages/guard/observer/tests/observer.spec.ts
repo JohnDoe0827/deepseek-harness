@@ -199,11 +199,49 @@ describe('observer rule evaluation', () => {
     await vi.advanceTimersByTimeAsync(50)
   })
 
+  it('twin mode: judges only the twin agent, never other sessions (barber paradox)', async () => {
+    // One context, two agents. The observer's `twinId` names agentB, so the
+    // observer judges ONLY agentB and leaves agentA (and itself) untouched —
+    // the judge never rules on its own host, and within a fleet the twin
+    // pairing keeps every agent's judge external to the judged.
+    const ctx = new Context()
+    contexts.push(ctx)
+    await mountAgentLoopTestDependencies(ctx)
+    ctx.llm.registerAdapter(['mock'], new ScriptedYieldingAdapter(silentHangScript))
+    // Observer mounts FIRST with a known twin id; agents are created after,
+    // so `agent/created` seeds observation state for both.
+    const twinBId = SessionId(`twin-b-${Math.random()}`)
+    const twinConfig: Config = {
+      tickMs: 100,
+      maxTurnSeconds: 1,
+      maxSilenceSeconds: 0,
+      maxTurns: 0,
+      maxRepeatedToolCalls: 0,
+      enableStandingReminder: false,
+      twinId: String(twinBId),
+    }
+    await ctx.plugin(observer, twinConfig)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    const agentA = ctx.agentLoop.create(SessionId(`twin-a-${Math.random()}`), { provider: 'mock', model: 'mock' })
+    const agentB = ctx.agentLoop.create(twinBId, { provider: 'mock', model: 'mock' })
+
+    // Both agents stall mid-turn (silent hang, so turn-budget would fire).
+    agentA.followup(createUserMessage({ content: [{ type: 'text', text: 'stall a' }], source: { kind: 'user' } }))
+    agentB.followup(createUserMessage({ content: [{ type: 'text', text: 'stall b' }], source: { kind: 'user' } }))
+    await vi.advanceTimersByTimeAsync(2500)
+
+    // The twin (B) was judged; the non-twin (A) was left alone even though it
+    // violated the same budget — the judge is external to both itself and A.
+    const onB = noticeData(agentB)
+    expect(onB.some(d => d.rule === 'turn-budget' && d.level === 1)).toBe(true)
+    expect(noticeData(agentA)).toHaveLength(0)
+
+    agentA.cancel({ kind: 'parent' })
+    agentB.cancel({ kind: 'parent' })
+    await vi.advanceTimersByTimeAsync(50)
+  })
+
   it('steers on repeated identical tool calls', async () => {
-    // The model requests the same tool call 4 times; the repeat chain fires at
-    // maxRepeatedToolCalls=2 and steers (level 2). A MockAdapter script array
-    // makes each tool-call response one separate model call, mirroring the
-    // real loop (call → result → call again).
     const ctx = new Context()
     contexts.push(ctx)
     await mountAgentLoopTestDependencies(ctx)

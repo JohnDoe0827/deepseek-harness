@@ -43,7 +43,8 @@ export const inject = ['agents']
 export type ObserverInterventionLevel = 1 | 2 | 3
 
 /** The rule that fired; one per notice, stable ids for diagnostics. */
-export type ObserverRuleId = 'turn-budget' | 'silence-budget' | 'turn-cap' | 'repeated-tool'
+export type ObserverRuleId =
+  | 'turn-budget' | 'silence-budget' | 'turn-cap' | 'repeated-tool' | 'ring-failover'
 
 /** Durable payload of one `observer/notice` event. */
 export interface ObserverNoticeData {
@@ -76,6 +77,15 @@ export interface Config {
    * solution to self-reference).
    */
   twinId?: string
+  /**
+   * RAID-style ring of wards: ordered agent ids this observer guards, in
+   * failover order. The observer judges the first LIVE ring member; when that
+   * member dies (`agent/disposed`), it takes over the next member and records
+   * a `ring-failover` notice on the new ward — redundancy like RAID-1, where
+   * the twin is the special case of a two-member ring. Self is never a ring
+   * member (barber paradox holds for every ring size).
+   */
+  ringIds?: string[]
 }
 
 export const Config: z<Config> = z.object({
@@ -86,6 +96,7 @@ export const Config: z<Config> = z.object({
   maxRepeatedToolCalls: z.number().default(3),
   enableStandingReminder: z.boolean().default(false),
   twinId: z.string(),
+  ringIds: z.array(z.string()),
 })
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -370,15 +381,59 @@ export function apply(ctx: Context, config: Config): void {
     // from the durable `tool/call` event, not the live execution.
 
     // ---- independent tick: the observer's own clock ----
+    // RAID-style redundancy resolution: a ring (or single twin) names the
+    // wards in failover order. Each tick resolves the first LIVE ward and
+    // judges only it; a ward that dies (agent/disposed removes it from the
+    // registry) is replaced by the next live ring member, and the takeover is
+    // announced on the new ward. With no ring/twin the observer is the
+    // legacy un-twin configuration and judges every live session.
+    const ring = cfg.ringIds !== undefined && cfg.ringIds.length > 0
+      ? cfg.ringIds
+      : (cfg.twinId === undefined ? undefined : [cfg.twinId])
+    let currentWard: string | undefined
     const timer = setInterval(() => {
+      const live = ctx.agents.list()
+      if (ring !== undefined) {
+        const wardId = ring.find(id => live.some(agent => String(agent.id) === id))
+        if (wardId === undefined) return
+        const ward = live.find(agent => String(agent.id) === wardId)
+        if (ward === undefined) return
+        if (wardId !== currentWard) {
+          if (currentWard !== undefined) {
+            // Failover: the previous ward is gone; announce the takeover on
+            // the adopted ward (durable notice + model-visible inject).
+            const state = stateFor(ward.session)
+            const reason = `ring member ${currentWard} was lost; ${wardId} is now the active ward`
+            const notice: ObserverNoticeData = {
+              rule: 'ring-failover',
+              level: 1,
+              reason,
+              text: `Observer: ${reason}. You are now under observation as the ring's active member.`,
+            }
+            state.fired.add('ring-failover')
+            ward.session.append('observer/notice', notice)
+            ward.inject(createUserMessage({
+              content: [{ type: 'text', text: notice.text }],
+              source: {
+                ...PLUGIN_SOURCE,
+                form: 'notice' as const,
+                summary: 'observer ring-failover @1',
+              },
+            }))
+          }
+          currentWard = wardId
+        }
+        const state = states.get(ward.session)
+        if (state === undefined || state.cancelledOnce || state.handoffRequested) return
+        const verdict = evaluate(state, cfg, now())
+        if (verdict !== undefined) {
+          intervene(state, ward, verdict.level, verdict.rule, verdict.reason, verdict.text)
+        }
+        return
+      }
       for (const session of Array.from(sessions)) {
         const agent = ctx.agents.get(session.id)
         if (agent === undefined || agent.session !== session) continue
-        // Twin mode (barber paradox): a `twinId` narrows observation to that
-        // exact agent, so this observer judges only its twin and can never
-        // judge itself — the two observers form a closed mutual loop with the
-        // judge always external to the judged. Without a twin, observe all.
-        if (cfg.twinId !== undefined && String(agent.id) !== cfg.twinId) continue
         const state = states.get(session)
         // Evaluate always: turn-budget/silence only bite during an active
         // turn (they guard on activeTurn), while turn-cap must fire at the

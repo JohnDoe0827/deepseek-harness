@@ -26,6 +26,8 @@ The `dsh-context-handoff` skill documents the manual fallback (when the plugin i
     topic: session-handoff   # default; artifact/note name stem
     excludePatterns: [.git, node_modules, lib]  # default; tarball excludes
     backupRunner: <fn>       # optional; inject a test/different executor
+    keepCycles: 3            # default; generations of artifacts to retain (RAID rotation)
+    scrubMs: 0               # default; cadence of git bundle verify (0 = disabled)
 ```
 
 - `tickMs` — how often the observer re-measures live sessions (ms).
@@ -33,9 +35,11 @@ The `dsh-context-handoff` skill documents the manual fallback (when the plugin i
 - `cycle` — the handoff generation. The first session runs 0; each fresh session sets it one past the last notice (`handoff cycle + 1`), so the durable record sequences how many generations the monitoring loop has survived.
 - `backupDir` — directory for the bundle / tarball / JSONL / note (default `~/backups`).
 - `projectDir` — project root whose git history and working tree are archived (default `process.cwd()`, which is the dsh launch directory).
-- `topic` — name stem for artifacts (`<topic>.bundle`, `<topic>-src.tar.gz`, `HANDOFF-<topic>.md`, `<topic>-conversation.jsonl`). Default derives from the session id.
+- `topic` — name stem for artifacts (`<topic>.c<cycle>.bundle`, `<topic>-src.c<cycle>.tar.gz`, `HANDOFF-<topic>.c<cycle>.md`, `<topic>.c<cycle>.conversation.jsonl`). Default derives from the session id.
 - `excludePatterns` — tar `--exclude` patterns for the tarball.
 - `backupRunner` — injectable backup executor (the default uses child processes; tests inject an in-memory fake).
+- `keepCycles` — generations of artifacts to retain; older generations are pruned after a successful backup (multi-copy redundancy for crash rewind).
+- `scrubMs` — cadence of the RAID-style scrub: `git bundle verify` every kept bundle, drop corrupt generations (durable `context/scrub` event), rewind retention to the last healthy one. `0` disables.
 
 The boundary is `Math.floor(contextWindow * thresholdRatio)`. The adapted model must expose its `contextWindow` (`resolveModelInfo`); targets without disclosed capacity are skipped until one is configured.
 
@@ -50,6 +54,10 @@ The boundary is `Math.floor(contextWindow * thresholdRatio)`. The adapted model 
 - **The durable notice is the record of the reminder.** The injected message text is reconstructable from the `context/handoff` event's fields (target, totals, threshold, ratio, reason, cycle, and the artifact paths), satisfying model-visible ⟺ logged.
 - **Model capacity is resolved once per target.** `resolveModelInfo` gives the routed model's `contextWindow`; the resulting threshold is cached per `provider/model` key instead of queried every tick.
 - **The route comes from the session default.** The observer reads `ctx.agentDefaultModel.currentSelection()`, the same fallback a reviewer role uses, so the measured client matches the model actually serving the session.
+
+## Crash rewind (DNA-style)
+
+Artifacts are versioned by cycle (`<topic>.c<cycle>.*`). `keepCycles` retains the last N generations (multi-copy redundancy like RAID), and the scrub (`scrubMs`) regularly verifies every kept bundle with `git bundle verify`, dropping corrupt generations into a durable `context/scrub` event — the retention rewinds to the last healthy copy. After a crash, `recoverFromCheckpoint(backupDir, topic)` returns the newest HEALTHY bundle plus the restore recipe (`git clone <bundle>`, `pnpm install`, resume from the matching `HANDOFF-<topic>.c<cycle>.md` with `cycle + 1`) — so a corrupt latest generation is never trusted, only the newest verified checkpoint.
 
 ## Backup executor
 

@@ -241,6 +241,59 @@ describe('observer rule evaluation', () => {
     await vi.advanceTimersByTimeAsync(50)
   })
 
+  it('ring mode: judges the first live ring member and takes over when it dies (RAID failover)', async () => {
+    // Three agents; the observer's ring names B then C as wards. While B
+    // lives the observer judges only B; once B is disposed (crashed), the
+    // observer adopts C and records a ring-failover notice on C.
+    const ctx = new Context()
+    contexts.push(ctx)
+    await mountAgentLoopTestDependencies(ctx)
+    ctx.llm.registerAdapter(['mock'], new ScriptedYieldingAdapter(silentHangScript))
+    const idB = SessionId(`ring-b-${Math.random()}`)
+    const idC = SessionId(`ring-c-${Math.random()}`)
+    const ringConfig: Config = {
+      tickMs: 50,
+      maxTurnSeconds: 1,
+      maxSilenceSeconds: 0,
+      maxTurns: 0,
+      maxRepeatedToolCalls: 0,
+      enableStandingReminder: false,
+      ringIds: [String(idB), String(idC)],
+    }
+    await ctx.plugin(observer, ringConfig)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    const agentA = ctx.agentLoop.create(SessionId(`ring-a-${Math.random()}`), { provider: 'mock', model: 'mock' })
+    // B is created through createAgent so the test holds an AgentHandle and
+    // can dispose it to drive agent/disposed, the ring death signal.
+    const handleB = await ctx.agentLoop.createAgent(ctx, { sessionId: idB, agentOptions: { provider: 'mock', model: 'mock' } })
+    const agentB = handleB.agent
+    const agentC = ctx.agentLoop.create(idC, { provider: 'mock', model: 'mock' })
+
+    // All three stall; only B (the first live ring member) is judged.
+    agentA.followup(createUserMessage({ content: [{ type: 'text', text: 'stall a' }], source: { kind: 'user' } }))
+    agentB.followup(createUserMessage({ content: [{ type: 'text', text: 'stall b' }], source: { kind: 'user' } }))
+    agentC.followup(createUserMessage({ content: [{ type: 'text', text: 'stall c' }], source: { kind: 'user' } }))
+    await vi.advanceTimersByTimeAsync(1500)
+
+    expect(noticeData(agentB).some(d => d.rule === 'turn-budget')).toBe(true)
+    expect(noticeData(agentA)).toHaveLength(0)
+    expect(noticeData(agentC).some(d => d.rule === 'ring-failover')).toBe(false)
+
+    // B crashes: dispose the handle, which drives agent/disposed. The observer
+    // adopts C: C now carries a ring-failover notice and its budget is judged.
+    await handleB.dispose()
+    await vi.advanceTimersByTimeAsync(50)
+    agentC.followup(createUserMessage({ content: [{ type: 'text', text: 'stall c2' }], source: { kind: 'user' } }))
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(noticeData(agentC).some(d => d.rule === 'ring-failover')).toBe(true)
+    expect(noticeData(agentC).some(d => d.rule === 'turn-budget')).toBe(true)
+
+    agentA.cancel({ kind: 'parent' })
+    agentC.cancel({ kind: 'parent' })
+    await vi.advanceTimersByTimeAsync(50)
+  })
+
   it('steers on repeated identical tool calls', async () => {
     const ctx = new Context()
     contexts.push(ctx)

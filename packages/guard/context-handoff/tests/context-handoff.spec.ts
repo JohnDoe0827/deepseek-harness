@@ -20,8 +20,15 @@ import { LlmAdapter, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as contextHandoff from '../src/index.ts'
 import type { BackupArtifacts, Config } from '../src/index.ts'
+
+const execFileAsync = promisify(execFile)
 
 /** Adapter whose model exposes a 1000-token window (threshold = 600 at 0.6). */
 class ContextAdapter extends LlmAdapter {
@@ -69,14 +76,17 @@ async function harness(overrides: Partial<Config> = {}): Promise<{ ctx: Context;
   const backups: BackupArtifacts[] = []
   const ctx = new Context()
   contexts.push(ctx)
+  // Unique per-test temp dirs so parallel runs never share rotation/scrub state.
+  const backupDir = `/tmp/dsh-handoff-test-${Math.random().toString(36).slice(2)}`
+  const projectDir = `/tmp/dsh-handoff-project-${Math.random().toString(36).slice(2)}`
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(TokenMeter)
   await ctx.plugin(AgentDefaultModel, { provider: 'mock', model: 'mock' })
   await ctx.plugin(contextHandoff, {
     tickMs: 50,
     thresholdRatio: 0.6,
-    backupDir: '/tmp/dsh-handoff-test',
-    projectDir: '/tmp/dsh-handoff-project',
+    backupDir,
+    projectDir,
     backupRunner: fakeBackupRunner(backups),
     ...overrides,
   })
@@ -127,7 +137,7 @@ describe('dsh-context-handoff observer', () => {
     expect(notice.totalTokens).toBeGreaterThanOrEqual(600)
     expect(notice.target).toBe('mock/mock')
     // The notice carries the artifact paths written by the runner.
-    expect(notice.backupDir).toBe('/tmp/dsh-handoff-test')
+    expect(notice.backupDir).toContain('/tmp/dsh-handoff-test-')
     expect(notice.bundlePath).toContain('.bundle')
     expect(notice.notePath).toContain('HANDOFF-')
     expect(notice.error).toBeUndefined()
@@ -204,6 +214,7 @@ describe('dsh-context-handoff observer', () => {
       excludePatterns: ['.git', 'node_modules', 'lib'],
       sessionId: 'self-test',
       note: 'x',
+      cycle: 0,
     })).rejects.toThrow('self-backup refused')
   })
 
@@ -229,5 +240,74 @@ describe('dsh-context-handoff observer', () => {
     expect(notices.length).toBeGreaterThanOrEqual(1)
     // The note file was really written, so the runner's verification records it.
     expect(notices[0]!.verified?.some(path => path.includes('HANDOFF-'))).toBe(true)
+  })
+
+  it('rotates generations: keeps the newest keepCycles and prunes older ones (RAID retention)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'handoff-rotate-'))
+    try {
+      for (const cycle of [1, 2, 3, 4, 5]) {
+        await writeFile(join(dir, `t.c${cycle}.bundle`), 'bundle')
+        await writeFile(join(dir, `HANDOFF-t.c${cycle}.md`), 'note')
+      }
+      const pruned = await contextHandoff.rotateBackups(dir, 't', 3)
+      // Generations 4 and 5 survive (newest 3 = 3,4,5); 1 and 2 pruned.
+      expect(pruned.length).toBe(4) // 2 bundles + 2 notes
+      const left = await readdir(dir)
+      expect(left.some(name => name.includes('.c1.'))).toBe(false)
+      expect(left.some(name => name.includes('.c2.'))).toBe(false)
+      expect(left.some(name => name.includes('.c5.'))).toBe(true)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('scrubs corrupt bundles: verifies each kept bundle and drops corrupt generations', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'handoff-scrub-'))
+    try {
+      // A healthy bundle (git bundle verify accepts it) and a corrupt one.
+      // The healthy one comes from a real scratch repo; the corrupt one is
+      // garbage bytes, so verification fails and it is dropped.
+      const repo = await mkdtemp(join(tmpdir(), 'handoff-repo-'))
+      await execFileAsync('git', ['init', '-q'], { cwd: repo })
+      await writeFile(join(repo, 'a.txt'), 'hello')
+      await execFileAsync('git', ['add', '-A'], { cwd: repo })
+      await execFileAsync('git', ['commit', '-qm', 'init'], { cwd: repo })
+      await execFileAsync('git', ['bundle', 'create', join(dir, 't.c1.bundle'), '--all'], { cwd: repo })
+      await writeFile(join(dir, 't.c2.bundle'), 'not a real bundle')
+      const result = await contextHandoff.scrubBackups(dir, 't')
+      expect(result.checked).toBe(2)
+      expect(result.dropped).toBe(1)
+      expect(result.reason).toContain('t.c2.bundle')
+      // The corrupt generation is gone; the healthy one remains.
+      const left = await readdir(dir)
+      expect(left.some(name => name.endsWith('.c2.bundle'))).toBe(false)
+      expect(left.some(name => name.endsWith('.c1.bundle'))).toBe(true)
+      await rm(repo, { recursive: true, force: true })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('recovers from a checkpoint: rewinds to the newest healthy bundle when the latest is corrupt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'handoff-recover-'))
+    try {
+      const repo = await mkdtemp(join(tmpdir(), 'handoff-recover-repo-'))
+      await execFileAsync('git', ['init', '-q'], { cwd: repo })
+      await writeFile(join(repo, 'a.txt'), 'hello')
+      await execFileAsync('git', ['add', '-A'], { cwd: repo })
+      await execFileAsync('git', ['commit', '-qm', 'init'], { cwd: repo })
+      await execFileAsync('git', ['bundle', 'create', join(dir, 't.c1.bundle'), '--all'], { cwd: repo })
+      // The latest generation is corrupt; recovery must rewind to c1.
+      await writeFile(join(dir, 't.c2.bundle'), 'corrupt bytes')
+      const recovered = await contextHandoff.recoverFromCheckpoint(dir, 't')
+      expect(recovered).not.toBeNull()
+      expect(recovered!.cycle).toBe(1)
+      expect(recovered!.bundlePath).toContain('.c1.bundle')
+      expect(recovered!.restore).toContain('git clone')
+      expect(recovered!.restore).toContain('cycle = 2')
+      await rm(repo, { recursive: true, force: true })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

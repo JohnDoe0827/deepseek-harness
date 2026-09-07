@@ -92,6 +92,8 @@ export type BackupRunner = (opts: {
   sessionId: string
   /** Rendered handoff note the runner writes to `notePath`. */
   note: string
+  /** Handoff cycle; artifact and note names carry it so generations rotate (RAID retention). */
+  cycle: number
 }) => Promise<BackupArtifacts>
 
 /** Deployment-owned config: the pressure boundary plus backup destinations. */
@@ -119,6 +121,20 @@ export interface Config {
    * neither blindly trusts its own backup (self-reference protection).
    */
   twinVerifyId?: string
+  /**
+   * RAID-style retention: how many cycle generations of artifacts to keep
+   * (default 3). Older generations are pruned after a successful backup, so
+   * the backups directory behaves like multi-copy redundancy — a crash can
+   * rewind to the previous healthy generation, not only the latest.
+   */
+  keepCycles?: number
+  /**
+   * RAID-ish scrub cadence in ms (default 0 = disabled): periodically verify
+   * every kept `.bundle` with `git bundle verify` and drop corrupt
+   * generations, rewinding to the last healthy one. A scrub failure is
+   * recorded in a durable `context/scrub` notice.
+   */
+  scrubMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -131,6 +147,8 @@ export const Config: z<Config> = z.object({
   excludePatterns: z.array(z.string()),
   backupRunner: z.function(),
   twinVerifyId: z.string(),
+  keepCycles: z.number().default(3),
+  scrubMs: z.number().default(0),
 })
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -147,6 +165,14 @@ declare module '@deepseek-ai/dsh-session/types' {
      * reminder the agent received.
      */
     'context/handoff': ContextHandoffNoticeData
+    /**
+     * One RAID-style scrub result: `checked` bundles verified healthy, `dropped`
+     * corrupt generations that were removed so the retention rewinds to the
+     * last healthy copy, and `reason` the finding. Durable so the log records
+     * the scrub's verdict, not just the scrub's claim.
+     * @mode durable.
+     */
+    'context/scrub': { checked: number; dropped: number; reason: string }
   }
 }
 
@@ -175,6 +201,8 @@ type ResolvedConfig = {
   topic: string
   excludePatterns: string[]
   backupRunner: BackupRunner
+  keepCycles: number
+  scrubMs: number
 }
 
 /** The exported conversation record path, from the host environment when present. */
@@ -253,9 +281,9 @@ export const defaultBackupRunner: BackupRunner = async (opts) => {
       + 'point backupDir outside the project (e.g. ~/backups)',
     )
   }
-  const bundlePath = join(opts.backupDir, `${opts.topic}.bundle`)
-  const tarballPath = join(opts.backupDir, `${opts.topic}-src.tar.gz`)
-  const notePath = join(opts.backupDir, `HANDOFF-${opts.topic}.md`)
+  const bundlePath = join(opts.backupDir, `${opts.topic}.c${opts.cycle}.bundle`)
+  const tarballPath = join(opts.backupDir, `${opts.topic}-src.c${opts.cycle}.tar.gz`)
+  const notePath = join(opts.backupDir, `HANDOFF-${opts.topic}.c${opts.cycle}.md`)
   const jsonlSource = sessionJsonlPath()
   const jsonlPath = jsonlSource === undefined
     ? undefined
@@ -307,6 +335,151 @@ export const defaultBackupRunner: BackupRunner = async (opts) => {
   }
 }
 
+/** The cycle number embedded in one rotation artifact path, or `undefined`. */
+function cycleOf(path: string): number | undefined {
+  const match = /\.c(\d+)(\.bundle|\.tar\.gz|\.md|\.conversation\.jsonl)$/.exec(path)
+  return match === null ? undefined : Number(match[1])
+}
+
+/**
+ * RAID-style retention rotation: after a successful backup, prune artifact
+ * generations older than the `keepCycles` newest, so the backup directory
+ * keeps the last N healthy copies (a crash can rewind to an earlier healthy
+ * generation, not only the latest).
+ * @param backupDir - directory holding the rotation artifacts.
+ * @param topic - artifact-name stem the rotation tracks.
+ * @param keepCycles - how many newest generations to retain.
+ * @returns the paths pruned.
+ */
+export async function rotateBackups(
+  backupDir: string,
+  topic: string,
+  keepCycles: number,
+): Promise<string[]> {
+  const { readdir, rm } = await import('node:fs/promises')
+  let entries: string[]
+  try {
+    entries = await readdir(backupDir)
+  } catch {
+    return []
+  }
+  const generations = new Map<number, string[]>()
+  for (const entry of entries) {
+    const cycle = cycleOf(entry)
+    if (cycle === undefined || !entry.includes(topic)) continue
+    const list = generations.get(cycle) ?? []
+    list.push(join(backupDir, entry))
+    generations.set(cycle, list)
+  }
+  const sorted = [...generations.keys()].sort((a, b) => b - a)
+  const pruned: string[] = []
+  for (const cycle of sorted.slice(keepCycles)) {
+    for (const path of generations.get(cycle) ?? []) {
+      await rm(path, { force: true })
+      pruned.push(path)
+    }
+  }
+  return pruned
+}
+
+/**
+ * RAID analysis scrub: verify every kept `.bundle` generation with
+ * `git bundle verify` and remove corrupt ones, rewinding retention to the
+ * last healthy copy. Returns the checked and dropped counts; a dropped
+ * generation is recorded in a durable `context/scrub` event by the caller.
+ * @param backupDir - directory holding the rotation artifacts.
+ * @param topic - artifact-name stem the scrub tracks.
+ * @returns checked and dropped bundle counts.
+ */
+export async function scrubBackups(
+  backupDir: string,
+  topic: string,
+): Promise<{ checked: number; dropped: number; reason: string }> {
+  const { readdir, rm } = await import('node:fs/promises')
+  let entries: string[]
+  try {
+    entries = await readdir(backupDir)
+  } catch {
+    return { checked: 0, dropped: 0, reason: `no backup dir ${backupDir}` }
+  }
+  // `git bundle verify` needs a repository context; make the backup dir one
+  // (idempotent, quiet) so verification does not depend on the caller's cwd.
+  await execFileAsync('git', ['init', '-q'], { cwd: backupDir }).catch(() => { /* already a repo */ })
+  let checked = 0
+  let dropped = 0
+  const droppedNames: string[] = []
+  for (const entry of entries) {
+    if (!entry.startsWith(`${topic}.`) || !entry.endsWith('.bundle')) continue
+    const path = join(backupDir, entry)
+    checked += 1
+    try {
+      await execFileAsync('git', ['bundle', 'verify', path], { cwd: backupDir })
+    } catch {
+      dropped += 1
+      droppedNames.push(entry)
+      await rm(path, { force: true })
+    }
+  }
+  return {
+    checked,
+    dropped,
+    reason: dropped === 0
+      ? `scrubbed ${checked} bundle(s), all healthy`
+      : `scrub dropped corrupt bundle(s): ${droppedNames.join(', ')}`,
+  }
+}
+
+/**
+ * DNA-style crash rewind: after a crash, recover from the newest HEALTHY
+ * checkpoint generation instead of the latest (which may be corrupt). Verifies
+ * each kept bundle newest-first, and returns the rewind instructions naming
+ * the healthy bundle, its cycle, and the restore commands. A corrupt latest
+ * generation is reported so the operator rewinds to the previous one.
+ * @param backupDir - directory holding the rotation artifacts.
+ * @param topic - artifact-name stem the recovery tracks.
+ * @returns the newest healthy checkpoint and its restore recipe, or `null`
+ * when no healthy bundle remains.
+ */
+export async function recoverFromCheckpoint(
+  backupDir: string,
+  topic: string,
+): Promise<{ bundlePath: string; cycle: number; restore: string } | null> {
+  const { readdir } = await import('node:fs/promises')
+  let entries: string[]
+  try {
+    entries = await readdir(backupDir)
+  } catch {
+    return null
+  }
+  const bundles: Array<{ cycle: number; path: string }> = []
+  for (const entry of entries) {
+    if (!entry.startsWith(`${topic}.`) || !entry.endsWith('.bundle')) continue
+    const cycle = cycleOf(entry)
+    if (cycle === undefined) continue
+    bundles.push({ cycle, path: join(backupDir, entry) })
+  }
+  bundles.sort((a, b) => b.cycle - a.cycle)
+  // `git bundle verify` needs a repository context; make the backup dir one.
+  await execFileAsync('git', ['init', '-q'], { cwd: backupDir }).catch(() => { /* already a repo */ })
+  for (const bundle of bundles) {
+    try {
+      await execFileAsync('git', ['bundle', 'verify', bundle.path], { cwd: backupDir })
+      return {
+        bundlePath: bundle.path,
+        cycle: bundle.cycle,
+        restore: [
+          `git clone ${bundle.path} <target>`,
+          'cd <target> && pnpm install && pnpm run build',
+          `read HANDOFF-${topic}.c${bundle.cycle}.md and resume with cycle = ${bundle.cycle + 1}`,
+        ].join('\n'),
+      }
+    } catch {
+      // This generation is corrupt; try the next one down (rewind).
+    }
+  }
+  return null
+}
+
 /**
  * Register the context-handoff observer: a clock that measures live session
  * pressure and, past the threshold, backs the project and conversation up
@@ -325,6 +498,8 @@ export function apply(ctx: Context, config: Config): void {
     topic: config.topic ?? 'session-handoff',
     excludePatterns: config.excludePatterns ?? ['.git', 'node_modules', 'lib'],
     backupRunner: config.backupRunner ?? defaultBackupRunner,
+    keepCycles: config.keepCycles ?? 3,
+    scrubMs: config.scrubMs ?? 0,
   }
   ctx.effect(function* () {
     const states = new WeakMap<Session, ObserverState>()
@@ -371,7 +546,25 @@ export function apply(ctx: Context, config: Config): void {
       }
     }, cfg.tickMs)
 
-    yield () => { clearInterval(timer) }
+    // RAID-style scrub: on its own cadence, verify kept bundles and drop
+    // corrupt generations. The result is durable for replay (not just a claim).
+    let scrubTimer: NodeJS.Timeout | undefined
+    if (cfg.scrubMs > 0) {
+      scrubTimer = setInterval(() => {
+        void scrubBackups(cfg.backupDir, cfg.topic).then((result) => {
+          const agents = ctx.agents.list()
+          for (const agent of agents) {
+            agent.session.append('context/scrub', result)
+            break
+          }
+        })
+      }, Math.max(1000, cfg.scrubMs))
+    }
+
+    yield () => {
+      clearInterval(timer)
+      if (scrubTimer !== undefined) clearInterval(scrubTimer)
+    }
   })
 }
 
@@ -395,13 +588,13 @@ async function check(
   const reason = `${measurement.totalTokens} >= ${threshold} (${cfg.thresholdRatio} of ${window})`
   const sessionId = agent.session.id
   const topic = cfg.topic === 'session-handoff' ? `session-${sessionId}` : cfg.topic
-  const notePath = join(cfg.backupDir, `HANDOFF-${topic}.md`)
-  const bundlePath = join(cfg.backupDir, `${topic}.bundle`)
-  const tarballPath = join(cfg.backupDir, `${topic}-src.tar.gz`)
+  const notePath = join(cfg.backupDir, `HANDOFF-${topic}.c${cfg.cycle}.md`)
+  const bundlePath = join(cfg.backupDir, `${topic}.c${cfg.cycle}.bundle`)
+  const tarballPath = join(cfg.backupDir, `${topic}-src.c${cfg.cycle}.tar.gz`)
   const jsonlSource = sessionJsonlPath()
   const jsonlPath = jsonlSource === undefined
     ? undefined
-    : join(cfg.backupDir, `${topic}-conversation.jsonl`)
+    : join(cfg.backupDir, `${topic}.c${cfg.cycle}.conversation.jsonl`)
 
   let artifacts: BackupArtifacts
   let error: string | undefined
@@ -412,6 +605,7 @@ async function check(
       topic,
       excludePatterns: cfg.excludePatterns,
       sessionId,
+      cycle: cfg.cycle,
       note: renderHandoffNote({
         topic,
         cycle: cfg.cycle,
@@ -429,6 +623,13 @@ async function check(
   } catch (backupError) {
     artifacts = { notePath }
     error = backupError instanceof Error ? backupError.message : String(backupError)
+  }
+
+  // RAID-style retention rotation: after a successful backup, prune
+  // generations older than keepCycles so a crash can rewind to an earlier
+  // healthy copy, not only the latest.
+  if (error === undefined && cfg.keepCycles > 0) {
+    await rotateBackups(cfg.backupDir, topic, cfg.keepCycles).catch(() => { /* rotation is best-effort */ })
   }
 
   // Self-verification rides the runner: the backup executor stats its own

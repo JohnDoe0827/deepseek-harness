@@ -214,6 +214,9 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../packages/mcp/mcp-client
+      '@deepseek-ai/dsh-observer-loop':
+        specifier: workspace:^
+        version: link:../../packages/bundle/observer-loop
       '@deepseek-ai/dsh-persona':
         specifier: workspace:^
         version: link:../../packages/preset/persona
@@ -1305,6 +1308,31 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+
+  packages/bundle/observer-loop:
+    dependencies:
+      '@deepseek-ai/dsh-context-handoff':
+        specifier: workspace:^
+        version: link:../../guard/context-handoff
+      '@deepseek-ai/dsh-observer':
+        specifier: workspace:^
+        version: link:../../guard/observer
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.2.0
 
   packages/bundle/tui-app:
     dependencies:

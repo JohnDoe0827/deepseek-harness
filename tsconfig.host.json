@@ -246,6 +246,7 @@
     { "path": "./packages/examples/acp-demo" },
     { "path": "./packages/bundle/base" },
     { "path": "./packages/bundle/codewhale" },
+    { "path": "./packages/bundle/observer-loop" },
     { "path": "./packages/bundle/headless" },
     { "path": "./packages/bundle/web-app" },
     { "path": "./packages/bundle/tui-app" },

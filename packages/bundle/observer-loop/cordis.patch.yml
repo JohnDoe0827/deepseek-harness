@@ -1,0 +1,48 @@
+# The dsh-observer-loop bundle patch: the observer resilience layer for every
+# profile. Applied as ONE insert over dsh-base's rows, it mounts the hygiene
+# guard (dsh-observer) and the verbatim handoff with automatic backup
+# (dsh-context-handoff) with RAID-style self-healing defaults, so ANY
+# workspace that mounts this profile gets the full twin/ring/DNA loop without
+# per-project configuration.
+#
+# - Observer: per-session hygiene (turn budget, silence, turn cap, repeated
+#   tool calls). Twin/ring pairing is a deployment overlay (`twinId` /
+#   `ringIds` in a profile or user patch); the defaults below are the
+#   un-twin configuration (judges every session it sees).
+# - Handoff: bloat detection at 0.6 of the routed model's context window,
+#   automatic backup (git bundle --all + tarball + JSONL export + note) into
+#   the shared Harness home backups dir, 3 retained generations, and a daily
+#   scrub that verifies every kept bundle and drops corrupt ones. `projectDir`
+#   defaults to the launching workspace (process.cwd()), so one deployment
+#   value serves every project.
+# - Recovery: `recoverFromCheckpoint` is a library surface; the fresh session
+#   reads the HANDOFF note and resumes with cycle + 1.
+
+- insert:
+    - id: observer
+      name: '@deepseek-ai/dsh-observer'
+      config:
+        tickMs: 1000
+        maxTurnSeconds: 300
+        maxSilenceSeconds: 120
+        maxTurns: 50
+        maxRepeatedToolCalls: 3
+        enableStandingReminder: false
+
+    - id: context-handoff
+      name: '@deepseek-ai/dsh-context-handoff'
+      config:
+        tickMs: 10000
+        thresholdRatio: 0.6
+        cycle: 0
+        backupDir: !!js dshHomePath('backups')
+        # projectDir defaults to process.cwd() — the launching workspace —
+        # so every project mount archives itself with no per-project config.
+        excludePatterns:
+          - .git
+          - node_modules
+          - lib
+          - dist
+          - build
+        keepCycles: 3
+        scrubMs: 86400000

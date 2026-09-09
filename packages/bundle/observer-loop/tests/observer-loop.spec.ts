@@ -28,11 +28,12 @@ describe('dsh-observer-loop bundle', () => {
     )
     expect(Array.isArray(parsed)).toBe(true)
     const rows = (parsed as { insert?: { id?: string }[] }[]).flatMap(patch => patch.insert ?? [])
-    expect(rows.map(row => row.id)).toEqual(['observer', 'context-handoff'])
+    expect(rows.map(row => row.id)).toEqual(['observer', 'context-handoff', 'tool-evolve'])
     // Every row's plugin ships as a declared dependency of the bundle, so the
     // profile composer resolves each bare name from the installation closure.
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-observer')
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-context-handoff')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-tool-evolve')
   })
 
   it('shapes each row config for deployment defaults', () => {

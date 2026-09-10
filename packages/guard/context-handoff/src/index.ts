@@ -160,17 +160,15 @@ declare module '@deepseek-ai/dsh-session/types' {
      * readable boundary fact, `cycle` the handoff generation, and the path
      * fields (`backupDir`, `bundlePath`, `tarballPath`, `jsonlPath`,
      * `notePath`) the artifacts the plugin wrote. `error` carries a backup
-     * failure when one occurred.
-     * @mode durable, model-visible adjacency: this event is the record of the
-     * reminder the agent received.
+     * failure when one occurred. This event is the record of the reminder the
+     * agent received.
      */
     'context/handoff': ContextHandoffNoticeData
     /**
      * One RAID-style scrub result: `checked` bundles verified healthy, `dropped`
      * corrupt generations that were removed so the retention rewinds to the
-     * last healthy copy, and `reason` the finding. Durable so the log records
-     * the scrub's verdict, not just the scrub's claim.
-     * @mode durable.
+     * last healthy copy, and `reason` the finding. The log records the scrub's
+     * verdict, not just the scrub's claim.
      */
     'context/scrub': { checked: number; dropped: number; reason: string }
   }

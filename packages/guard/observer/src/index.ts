@@ -105,19 +105,10 @@ declare module '@deepseek-ai/dsh-session/types' {
      * One observer intervention. `rule` names the fired rule, `level` the
      * escalated strength (1 inject / 2 steer / 3 cancel), `reason` the
      * observed facts that fired it, and `text` the message actually delivered
-     * to the agent (inject or steer content; empty for a cancel).
-     * @mode durable, model-visible adjacency: the delivered text must be
-     * reconstructable from this event.
+     * to the agent (inject or steer content; empty for a cancel). The
+     * delivered text must be reconstructable from this event.
      */
     'observer/notice': ObserverNoticeData
-    /**
-     * A context-bloat handoff request (owned by `@deepseek-ai/dsh-context-handoff`).
-     * The observer cedes intervention once this event appears; the payload is
-     * opaque here because the observer only reacts to its existence, and its
-     * full shape belongs to the owning package.
-     * @mode durable.
-     */
-    'context/handoff': Record<string, unknown>
   }
 }
 

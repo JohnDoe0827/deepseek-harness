@@ -386,6 +386,19 @@
         subagentProvider: spawn
         maxRounds: 64
 
+    # Seed + explicit iterations + nutrients + formed nodes with regress
+    # backtracking and mutation, on the same host `workflowEngine` the
+    # workflow and Ralph rows above resolve. The Web surface disables this
+    # row like its siblings and lets each session's preset mount it.
+    - id: tool-evolve
+      name: '@deepseek-ai/dsh-tool-evolve'
+      config:
+        subagentProvider: spawn
+        maxIterations: 64
+        maxNodeChars: 16384
+        maxResultChars: 16384
+        nodeMode: workspace
+
     - id: tool-str-replace-editor
       name: '@deepseek-ai/dsh-tool-str-replace-editor'
       config:

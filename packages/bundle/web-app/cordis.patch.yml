@@ -283,6 +283,13 @@
 # Disabling rather than deleting is deliberate: the base is shared, and a row
 # absent from a surface overlay would silently reappear the day someone reorders
 # the composition.
+#
+# Every row disabled below is inserted by `dsh-base`, this composition's first
+# bundle layer. A bundle applied AFTER this one cannot be reached by these
+# patches: an id-targeted patch for a row that does not exist yet is skipped
+# with a warning, and users append bundles through `dsh plugin --profile
+# <name> add`. A model-facing host row therefore belongs in `dsh-base` (or
+# inside the presets), never in a later bundle.
 
 # `shell-env` STAYS in the host plane: `apps/cli/src/web.ts` injects it to
 # publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
@@ -396,6 +403,9 @@
   disabled: true
 
 - id: tool-ralph
+  disabled: true
+
+- id: tool-evolve
   disabled: true
 
 - id: agent-instructions

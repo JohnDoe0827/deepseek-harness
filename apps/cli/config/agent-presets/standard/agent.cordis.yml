@@ -232,6 +232,15 @@
         subagentProvider: spawn
         maxRounds: 64
 
+    - id: tool-evolve
+      name: '@deepseek-ai/dsh-tool-evolve'
+      config:
+        subagentProvider: spawn
+        maxIterations: 64
+        maxNodeChars: 16384
+        maxResultChars: 16384
+        nodeMode: workspace
+
 # ── remaining model-facing rows ─────────────────────────────────────────────
 
 - id: tool-ask-user

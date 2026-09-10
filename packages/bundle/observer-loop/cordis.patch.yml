@@ -46,15 +46,3 @@
           - build
         keepCycles: 3
         scrubMs: 86400000
-
-    # Evolution tool: seed + explicit iterations + nutrients + formed nodes
-    # with regress backtracking and mutation, available to every session in
-    # any workspace under this profile.
-    - id: tool-evolve
-      name: '@deepseek-ai/dsh-tool-evolve'
-      config:
-        subagentProvider: spawn
-        maxIterations: 64
-        maxNodeChars: 16384
-        maxResultChars: 16384
-        nodeMode: workspace

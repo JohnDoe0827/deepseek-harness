@@ -17,15 +17,14 @@ Every session in any workspace launched under this profile carries the loop: the
 
 ## Composition
 
-The bundle patch inserts three rows:
+The bundle patch inserts two rows:
 
 | Row | Plugin | Deployment defaults |
 |---|---|---|
 | `observer` | `@deepseek-ai/dsh-observer` | `tickMs: 1000`, `maxTurnSeconds: 300`, `maxSilenceSeconds: 120`, `maxTurns: 50`, `maxRepeatedToolCalls: 3` |
 | `context-handoff` | `@deepseek-ai/dsh-context-handoff` | `thresholdRatio: 0.6`, `backupDir: dshHomePath('backups')`, `keepCycles: 3`, `scrubMs: 86400000`, excludes `.git`/`node_modules`/`lib`/`dist`/`build` |
-| `tool-evolve` | `@deepseek-ai/dsh-tool-evolve` | `subagentProvider: spawn`, `maxIterations: 64`, `nodeMode: workspace` |
 
-Later bundle layers and the user's `cordis.patch.yml` override these rows by id; a patch replaces a row's whole `config`. Twin/ring pairing (`twinId` / `ringIds`), per-project `backupDir`, custom budgets, and evolve policies are exactly such overlays.
+Later bundle layers and the user's `cordis.patch.yml` override these rows by id; a patch replaces a row's whole `config`. Twin/ring pairing (`twinId` / `ringIds`), per-project `backupDir`, and custom budgets are exactly such overlays.
 
 ## Model Experience
 

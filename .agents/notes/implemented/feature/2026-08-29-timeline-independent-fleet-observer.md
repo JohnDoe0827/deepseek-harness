@@ -36,7 +36,7 @@ The tick observer never mutates worker state directly — only through `inject`/
 
 The fleet now notices stalled, looping, or over-budget workers *while* they run, not only at a completed turn boundary — the gap the turn-stopping reviewer had. The cost:
 
-- **Tick cadence is deterministic and cost-free per tick** — the budgets are counters against the durable log, so no LLM call happens per interval. An LLM-judging tick role (spending a model call per interval) is deferred; the current evaluator never spends one.
+- **Tick cadence is cost-free until a judge role is composed** — the budgets are counters against the durable log, so no LLM call happens per interval. A tick role with `judge: true` opts into one LLM pass per `judgeIntervalMs` over the live activity window ([2026-09-10-tick-role-llm-judge](2026-09-10-tick-role-llm-judge.md)); the budget-only evaluator never spends one.
 - **`agent.inject` on a worker with no active turn parks** until the next wake; the tick only fires within an active run (`activeFleetRun` present) and level-2/3 actions check `cancelledOnce`.
 - **Run-level cancellation is per-session**: the tick cancels the one worker whose session is the run, then records `fleet/end observer-triggered`. Multi-worker sibling policy on one cancel is out of scope for this slice — the TS fleet is per-session; the Rust `codewhale_new` fleet owns multi-node orchestration.
 - **A tripped rule always records `verdict: 'fix'`**, so status rendering cannot mistake an observer intervention for a clean pass; the rule id and delivered text ride `reason`/`feedback`.

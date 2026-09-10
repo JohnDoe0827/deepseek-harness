@@ -87,5 +87,5 @@ Steering terminates the reusable request prefix for that agent until the turn se
 
 - **In-memory only** — observation state is not persisted; a resumed session starts fresh and re-accumulates budget counters.
 - **Exact-match repeat detection** — near-identical tool calls (a tweaked path, reordered-but-equal args still normalize; white-space-only differences inside a string do not) evade the repeat chain. Fuzzy matching is rejected pending evidence of need.
-- **No LLM-driven evaluation yet** — rules are deterministic counters against the observed facts. An LLM judge that evaluates whether the *intent* is being served (like `dsh-codewhale-fleet` reviewer roles) is a natural extension: plug into the same fact stream, emit `observer/notice` verdicts, reuse the same three intervention levels.
+- **No LLM-driven evaluation in the guard** — rules are deterministic counters against the observed facts. The fleet mirror ([`dsh-codewhale-fleet`](../codewhale/fleet/README.md)) ships the LLM-judging tick role (`judge: true`); the guard stays pure-counter by design.
 - **One steering cap per session** — after the first level-2+ intervention, later rule firings only append notices. Raise the cap if a deployment wants repeated redirection.

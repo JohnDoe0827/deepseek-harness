@@ -47,6 +47,31 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig({ ...base, maxRounds: 1.5 })).toThrow('positive integer')
     expect(() => resolveConfig({ ...base, maxTranscriptChars: 0 })).toThrow('positive number')
   })
+
+  it('rejects judge on a non-tick role and bad judge budgets', () => {
+    // judge: true requires cadence 'tick'.
+    expect(() => resolveConfig({
+      ...base,
+      roles: [{ id: 'r', instructions: 'x', judge: true }],
+    })).toThrow("judge: true requires cadence 'tick'")
+    // The judge budgets must be positive when set.
+    expect(() => resolveConfig({ ...base, judgeIntervalMs: 0 })).toThrow('`judgeIntervalMs` must be a positive number')
+    expect(() => resolveConfig({ ...base, judgeTranscriptChars: -1 })).toThrow('`judgeTranscriptChars` must be a positive number')
+  })
+
+  it('accepts a judging tick role with its own route and budgets', () => {
+    const config = resolveConfig({
+      ...base,
+      roles: [{
+        id: 'judge', cadence: 'tick', judge: true, provider: 'p', model: 'm', instructions: 'x',
+      }],
+      judgeIntervalMs: 200,
+      judgeTranscriptChars: 4000,
+    })
+    expect(config.roles[0]).toMatchObject({ id: 'judge', cadence: 'tick', judge: true })
+    expect(config.judgeIntervalMs).toBe(200)
+    expect(config.judgeTranscriptChars).toBe(4000)
+  })
 })
 
 describe('fleet folds', () => {

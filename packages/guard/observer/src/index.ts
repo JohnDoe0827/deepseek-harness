@@ -158,7 +158,17 @@ function isProgressEvent(event: SessionEvent): boolean {
     case 'request/header':
     case 'request/context':
     case 'session/end-seed':
+    // The observer's own notices and deliveries must not refresh the silence
+    // clock — a stalled worker echoed by repeated reminders would otherwise
+    // look alive.
+    case 'observer/notice':
       return false
+    case 'agent/inbox/spliced':
+      // A splice that only inserts plugin-sourced messages (the observer's
+      // own inject/steer, or any other synthetic reminder) is the observer
+      // talking, not the worker working; only a splice carrying a direct
+      // user message is progress.
+      return event.data.inserted.some(message => message.source.kind === 'user')
     case 'user/message':
       // A plugin-injected message (the observer's own reminder or any other
       // synthetic context) is not the agent making progress; only a direct

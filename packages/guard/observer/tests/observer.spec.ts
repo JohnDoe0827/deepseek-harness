@@ -146,6 +146,38 @@ describe('observer rule evaluation', () => {
     await vi.advanceTimersByTimeAsync(50)
   })
 
+  it('does not count its own notices as progress toward the silence budget', async () => {
+    // The observer's own durable `observer/notice` and plugin-sourced
+    // reminders must not refresh the silence clock. Config: turn budget 1s,
+    // silence budget 3s — so the turn budget fires FIRST (level 1) and the
+    // silence rule is measured from the last PROGRESS event (the turn start),
+    // not from the observer's own reminder.
+    const { ctx, agent } = await harness(_options => silentHangScript(_options), {
+      tickMs: 100,
+      maxTurnSeconds: 1,
+      maxSilenceSeconds: 3,
+      maxTurns: 0,
+      maxRepeatedToolCalls: 0,
+      enableStandingReminder: false,
+    })
+    contexts.push(ctx)
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'stall' }], source: { kind: 'user' } }))
+    // The turn budget fires at ~1s; its notice lands mid-window.
+    await vi.advanceTimersByTimeAsync(1200)
+    const mid = noticeData(agent)
+    expect(mid.some(d => d.rule === 'turn-budget' && d.level === 1)).toBe(true)
+
+    // Silence (3s) must still trip shortly after the notice: if the notice
+    // refreshed the silence clock, silence would wait until 1s + 3s = 4s.
+    await vi.advanceTimersByTimeAsync(2200) // total 3.4s
+    const fired = noticeData(agent)
+    expect(fired.some(d => d.rule === 'silence-budget' && d.level === 2)).toBe(true)
+
+    agent.cancel({ kind: 'parent' })
+    await vi.advanceTimersByTimeAsync(50)
+  })
+
   it('cancels on the turn cap with an observer hook cause', async () => {
     const script: StreamChunk[] = Array.from({ length: 4 }, () => textResponse('ack')).flat()
     const { ctx, agent } = await harness(_options => fromChunks(script), turnCapOnlyConfig(3))

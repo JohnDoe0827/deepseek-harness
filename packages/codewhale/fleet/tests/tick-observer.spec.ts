@@ -13,7 +13,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { CallId, LlmAdapter, MessageId } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage, LlmAdapter, MessageId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import * as Fleet from '../src/index.ts'
@@ -59,6 +59,21 @@ class ScriptedPassAdapter extends LlmAdapter {
   }
 }
 
+/** Scripted adapter returning a fix verdict on demand, pass otherwise. */
+class ScriptedJudgeAdapter extends LlmAdapter {
+  private call = 0
+  constructor(private readonly verdicts: ('pass' | 'fix')[]) { super() }
+  override async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const verdict = this.verdicts[this.call] ?? 'pass'
+    this.call++
+    const text = `{"verdict":"${verdict}","feedback":"judge says ${verdict}"}`
+    for (let index = 0; index < text.length; index += 8) {
+      yield { type: 'text-delta', index: 0, text: text.slice(index, index + 8) }
+    }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+}
+
 const contexts: Context[] = []
 
 afterEach(async () => {
@@ -78,7 +93,11 @@ beforeEach(() => {
  * so tick tests call apply directly for a deterministic clock) beside a real
  * loop and agent.
  */
-async function harness(cfg: Config = baseConfig, adapter: LlmAdapter = new HangAdapter()): Promise<{ ctx: Context; agent: Agent }> {
+async function harness(
+  cfg: Config = baseConfig,
+  adapter: LlmAdapter = new HangAdapter(),
+  judgeAdapter?: LlmAdapter,
+): Promise<{ ctx: Context; agent: Agent }> {
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
@@ -86,6 +105,7 @@ async function harness(cfg: Config = baseConfig, adapter: LlmAdapter = new HangA
   Fleet.apply(ctx, cfg)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
+  if (judgeAdapter !== undefined) ctx.llm.registerAdapter(['judge'], judgeAdapter)
   const agent = ctx.agentLoop.create(SessionId(`fleet-tick-${Math.random()}`), {
     provider: 'mock',
     model: 'mock',
@@ -228,5 +248,91 @@ describe('fleet tick observer', () => {
     expect(reviews.some(r => r.data.role === 'reviewer' && r.data.kind === undefined)).toBe(true)
     // The tick observer saw a clean idle run and recorded nothing (no rule tripped).
     expect(reviews.filter(r => r.data.kind === 'observer')).toHaveLength(0)
+  }, 30_000)
+
+  it('LLM judge pass: records an observer review without steering (no rule tripped)', async () => {
+    // A judging tick role with its own route; all budget rules disabled so
+    // ONLY the judge speaks.
+    const cfg: Config = {
+      roles: [
+        { id: 'judge', cadence: 'tick', judge: true, provider: 'judge', model: 'judge', instructions: 'Judge live progress.' },
+      ],
+      maxRounds: 2,
+      maxTranscriptChars: 8000,
+      tickMs: 50,
+      maxTurnSeconds: 0,
+      maxSilenceSeconds: 0,
+      maxTurns: 0,
+      maxRepeatedToolCalls: 0,
+      judgeIntervalMs: 50,
+      judgeTranscriptChars: 8000,
+    }
+    const { agent } = await harness(cfg, new HangAdapter(), new ScriptedJudgeAdapter(['pass', 'pass']))
+    agent.session.append('fleet/run', { id: '1', roles: 1 })
+    // A fleet run steers its task as a user message; the judge needs it.
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'build the widget' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 1 })
+    agent.session.append('assistant/message', {
+      turn: 1, step: 1, message: {
+        id: MessageId('assistant-judged'), role: 'assistant', content: [{ type: 'text', text: 'working on the task' }],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      },
+    }, { surfaceOp: 'append' })
+
+    await vi.advanceTimersByTimeAsync(200)
+
+    const reviews = observerReviews(agent)
+    expect(reviews.length).toBeGreaterThanOrEqual(1)
+    expect(reviews[0]?.data).toMatchObject({ id: '1', role: 'judge', verdict: 'pass', kind: 'observer' })
+    // A pass does not steer or close the run.
+    expect(agent.session.events.some(event => event.type === 'fleet/end' && event.data.id === '1')).toBe(false)
+
+    agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  }, 30_000)
+
+  it('LLM judge fix: steers and closes the run observer-triggered', async () => {
+    const cfg: Config = {
+      roles: [
+        { id: 'judge', cadence: 'tick', judge: true, provider: 'judge', model: 'judge', instructions: 'Judge live progress.' },
+      ],
+      maxRounds: 2,
+      maxTranscriptChars: 8000,
+      tickMs: 50,
+      maxTurnSeconds: 0,
+      maxSilenceSeconds: 0,
+      maxTurns: 0,
+      maxRepeatedToolCalls: 0,
+      judgeIntervalMs: 50,
+      judgeTranscriptChars: 8000,
+    }
+    const { agent } = await harness(cfg, new HangAdapter(), new ScriptedJudgeAdapter(['fix', 'pass']))
+    agent.session.append('fleet/run', { id: '1', roles: 1 })
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'build the widget' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 1 })
+    agent.session.append('assistant/message', {
+      turn: 1, step: 1, message: {
+        id: MessageId('assistant-judged-fix'), role: 'assistant', content: [{ type: 'text', text: 'going the wrong way' }],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      },
+    }, { surfaceOp: 'append' })
+
+    await vi.advanceTimersByTimeAsync(200)
+
+    const reviews = observerReviews(agent)
+    expect(reviews.some(r => r.data.role === 'judge' && r.data.verdict === 'fix')).toBe(true)
+    // A fix steers the feedback and closes the run observer-triggered.
+    expect(pluginDelivered(agent, 'judge says fix')).toBe(true)
+    expect(agent.session.events.some(event =>
+      event.type === 'fleet/end' && event.data.id === '1' && event.data.reason === 'observer-triggered')).toBe(true)
+
+    agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   }, 30_000)
 })

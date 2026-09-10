@@ -233,4 +233,20 @@ describe('codewhale-fleet real Loader composition', () => {
     // The reviewer row keeps its plain rendering.
     expect(text).toContain('reviewer: fix (9 chars)')
   }, 30_000)
+
+  it('a judging tick role mounts through the Loader schema with its budgets', async () => {
+    const ctx = await boot([], '    tickMs: 50\n    maxTurnSeconds: 0\n    maxSilenceSeconds: 0\n    maxTurns: 0\n    maxRepeatedToolCalls: 0\n    judgeIntervalMs: 100\n    judgeTranscriptChars: 4000', [
+      '      - id: judge',
+      '        cadence: tick',
+      '        judge: true',
+      '        instructions: Judge live progress.',
+      '        provider: test-provider',
+      '        model: test-model',
+    ].join('\n'))
+    // The Loader accepted the schema (boot would have thrown otherwise); a
+    // run with the judge role is reviewable through the command surface.
+    const owner = agent()
+    await ctx.commands.execute(owner, '/fleet run', new AbortController().signal)
+    expect(ledger(owner.session, 'fleet/run')).toHaveLength(1)
+  }, 30_000)
 })

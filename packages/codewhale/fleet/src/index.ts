@@ -57,9 +57,21 @@ export interface FleetRoleConfig {
    * turn. `tick` runs on the fleet's own clock and observes the *live* work:
    * it evaluates deterministic budget rules (turn duration, silence, turn
    * cap, repeated tool calls) before any model call, and records its
-   * interventions as `fleet/review` events with `kind: 'observer'`.
+   * interventions as `fleet/review` events with `kind: 'observer'`. A tick
+   * role with `judge: true` additionally runs a direct LLM pass over the
+   * running turn's recent activity (the `judgeIntervalMs` window), so the
+   * fleet can notice a worker that makes steady progress yet drifts from the
+   * task — the deterministic budgets never can.
    */
   readonly cadence?: FleetCadence
+  /**
+   * Whether a `tick` role also runs an LLM judge pass (default false). The
+   * judge is a direct route call on the same interval clock as the budget
+   * rules and appends `fleet/review kind: 'observer'`; its verdict
+   * `pass`/`fix` follows the reviewer contract, so no rule must trip for it
+   * to speak. Mechanics are intra-fleet, not deployment-facing.
+   */
+  readonly judge?: boolean
 }
 
 /** Deployment-owned fleet configuration. */
@@ -86,6 +98,15 @@ export interface Config {
   maxTurns?: number
   /** Consecutive identical tool calls before a tick observer steers (level 2). `0` disables. */
   maxRepeatedToolCalls?: number
+  /**
+   * Cadence for a `judge: true` tick role's LLM pass, in ms (default `tickMs`).
+   * The judge call itself is asynchronous and never overlaps a prior new
+   * judge (a slow model cannot queue); a skipped interval only delays the
+   * next pass.
+   */
+  judgeIntervalMs?: number
+  /** Byte cap for the transcript window a tick judge evaluates (default 8000). */
+  judgeTranscriptChars?: number
 }
 
 /** Schemastery configuration for the fleet plugin. */
@@ -98,6 +119,7 @@ export const Config: z<Config> = z.object({
     model: z.string(),
     reasoningEffort: z.string(),
     cadence: z.string(),
+    judge: z.boolean(),
   })).required(),
   maxRounds: z.number().required(),
   maxTranscriptChars: z.number().required(),
@@ -106,6 +128,8 @@ export const Config: z<Config> = z.object({
   maxSilenceSeconds: z.number().default(0),
   maxTurns: z.number().default(0),
   maxRepeatedToolCalls: z.number().default(0),
+  judgeIntervalMs: z.number(),
+  judgeTranscriptChars: z.number(),
 }) as z<Config>
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -119,9 +143,9 @@ declare module '@deepseek-ai/dsh-session/types' {
      * One fleet role completed one pass. For a `turn-stopping` reviewer
      * (`kind` absent), `verdict` is the reviewer's structured conclusion and
      * `feedback` its text. For a `tick` observer (`kind: 'observer'`),
-     * `verdict` is the deterministic rule outcome (`pass` = no rule tripped,
-     * `fix` = a budget rule tripped), `feedback` the delivered reminder, and
-     * `chars` the reason text length.
+     * `verdict` is the rule outcome (`pass` = an LLM judge cleared the turn,
+     * `fix` = a budget rule tripped or the judge asked for a change),
+     * `feedback` the delivered reminder, and `chars` the reason text length.
      */
     'fleet/review': {
       id: string
@@ -170,6 +194,12 @@ export function resolveConfig(config: Config): Config {
     if (role.cadence !== undefined && !isFleetCadence(role.cadence)) {
       throw new Error(`FleetConfig role ${JSON.stringify(role.id)} cadence must be 'turn-stopping' or 'tick'`)
     }
+    if (role.judge !== undefined && typeof role.judge !== 'boolean') {
+      throw new Error(`FleetConfig role ${JSON.stringify(role.id)} judge must be a boolean`)
+    }
+    if (role.judge === true && role.cadence !== 'tick') {
+      throw new Error(`FleetConfig role ${JSON.stringify(role.id)} judge: true requires cadence 'tick'`)
+    }
   }
   if (!Number.isSafeInteger(config.maxRounds) || config.maxRounds <= 0) {
     throw new Error('FleetConfig `maxRounds` must be a positive integer')
@@ -177,8 +207,14 @@ export function resolveConfig(config: Config): Config {
   if (typeof config.maxTranscriptChars !== 'number' || !Number.isFinite(config.maxTranscriptChars) || config.maxTranscriptChars <= 0) {
     throw new Error('FleetConfig `maxTranscriptChars` must be a positive number')
   }
+  for (const key of ['judgeIntervalMs', 'judgeTranscriptChars'] as const) {
+    const value = config[key]
+    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
+      throw new Error(`FleetConfig \`${key}\` must be a positive number`)
+    }
+  }
   const unknown = Object.keys(config).filter(key => ![
-    'roles', 'maxRounds', 'maxTranscriptChars', 'tickMs', 'maxTurnSeconds', 'maxSilenceSeconds', 'maxTurns', 'maxRepeatedToolCalls',
+    'roles', 'maxRounds', 'maxTranscriptChars', 'tickMs', 'maxTurnSeconds', 'maxSilenceSeconds', 'maxTurns', 'maxRepeatedToolCalls', 'judgeIntervalMs', 'judgeTranscriptChars',
   ].includes(key))
   if (unknown.length > 0) {
     throw new Error(`FleetConfig has unknown key(s) ${unknown.join(', ')}`)
@@ -268,6 +304,34 @@ export function latestAssistantText(events: readonly SessionEvent[], maxChars: n
 }
 
 /**
+ * The recent-activity window a tick judge evaluates: the running turn's
+ * step/tool records and the latest assistant response, newest first, joined
+ * and capped at `maxChars` code units.
+ * @param events - the session log.
+ * @param maxChars - the window cap.
+ * @returns the window text, or an empty string when the session has no records yet.
+ */
+function judgeWindow(events: readonly SessionEvent[], maxChars: number): string {
+  const window: string[] = []
+  let budget = maxChars
+  for (let index = events.length - 1; index >= 0 && budget > 0; index--) {
+    const event = events[index]
+    if (event === undefined) continue
+    if (event.type === 'step/start' || event.type === 'step/end' || event.type === 'tool/call' || event.type === 'assistant/message') {
+      const line = `${event.type}: ${event.type === 'assistant/message'
+        ? messageText(event.data.message)
+        : event.type === 'tool/call'
+          ? `${event.data.name} ${event.data.arguments}`
+          : ''}`
+      const slice = line.slice(0, budget)
+      window.push(slice)
+      budget -= slice.length
+    }
+  }
+  return window.join('\n')
+}
+
+/**
  * The next run sequence number for a session: one past its `fleet/run` count.
  * @param events - the session log.
  * @returns the next run number.
@@ -320,16 +384,32 @@ interface ObserverSessionState {
   repeatCount: number
   fired: Set<ObserverRuleId>
   cancelledOnce: boolean
+  /** When the last LLM judge pass ran (per judging role id), ms epoch; undefined before the first. */
+  judgeAt: Map<string, number>
+  /** True while a judge LLM call is in flight, so intervals never overlap judge calls. */
+  judging: boolean
 }
 
-/** True if this durable event is evidence of progress (fleet/observer bookkeeping is not). */
+/** True if this durable event is evidence of the worker making progress. */
 function isProgressEvent(event: SessionEvent): boolean {
   switch (event.type) {
     case 'todo/write':
     case 'request/header':
     case 'request/context':
     case 'session/end-seed':
+    // Ledger noise: the fleet's own run/review/end bookkeeping must not
+    // refresh the silence clock — the observer's own interventions would
+    // otherwise keep a stalled worker "alive" forever.
       return false
+    case 'fleet/run':
+    case 'fleet/review':
+    case 'fleet/end':
+      return false
+    case 'agent/inbox/spliced':
+      // A splice that only inserts plugin-sourced messages (a fleet steer or
+      // observer reminder) is the observer talking, not the worker working;
+      // only a splice carrying a direct user message is progress.
+      return event.data.inserted.some(message => message.source.kind === 'user')
     case 'user/message':
       // A plugin-injected message (a fleet steer or observer reminder) is not
       // the worker making progress; only a direct user prompt counts.
@@ -365,13 +445,19 @@ function safeParse(raw: string): unknown {
   }
 }
 
-/** An observer verdict: `pass` = no rule tripped, `fix` = a budget rule tripped. */
+/** Observer verdict: `pass` = no rule tripped (or judge cleared); `fix` = a rule tripped or the judge asked for a change. */
 interface ObserverVerdict {
   role: string
   rule: ObserverRuleId
   reason: string
   feedback: string
   level: 1 | 2 | 3
+}
+
+/** A judging tick role's route, resolved once per role at plugin apply. */
+interface JudgeRoleRoute {
+  role: FleetRoleConfig
+  route: LlmCallConfig
 }
 
 /**
@@ -517,6 +603,11 @@ export function apply(ctx: Context, config: Config): void {
   const observerState = new WeakMap<Session, ObserverSessionState>()
   const observedSessions = new Set<Session>()
   const tickRoles = cfg.roles.filter(role => role.cadence === 'tick')
+  // Judging tick roles: their LLM route is resolved once (the session default
+  // is fixed and cannot route mid-run).
+  const judgeRoles = tickRoles
+    .filter(role => role.judge === true)
+    .map(role => ({ role, route: routeFor(role) }))
 
   function observerFor(session: Session): ObserverSessionState {
     let state = observerState.get(session)
@@ -530,6 +621,8 @@ export function apply(ctx: Context, config: Config): void {
         repeatCount: 0,
         fired: new Set(),
         cancelledOnce: false,
+        judgeAt: new Map(),
+        judging: false,
       }
       observerState.set(session, state)
       observedSessions.add(session)
@@ -641,6 +734,72 @@ export function apply(ctx: Context, config: Config): void {
     return { verdict: parsed.verdict, feedback: parsed.feedback, chars: text.length }
   }
 
+  /**
+   * One LLM judge pass for a `judge: true` tick role: evaluate the running
+   * turn's recent activity window (task, turn/step/tool events, latest
+   * response) through a direct route call. The verdict follows the reviewer
+   * contract — `pass` = the worker is serving the task, `fix` = ask it to
+   * change approach — and every pass records a durable `fleet/review` with
+   * `kind: 'observer'`.
+   */
+  async function judgeRun(
+    judge: JudgeRoleRoute,
+    agent: Agent,
+    session: Session,
+    runId: string,
+    state: ObserverSessionState,
+  ): Promise<void> {
+    const task = runTask(session.events, runId)
+    const window = judgeWindow(session.events, cfg.judgeTranscriptChars ?? cfg.maxTranscriptChars)
+    if (task.trim() === '' || window.trim() === '') return
+    const prepared = await ctx.llm.prepareCall(judge.route, new AbortController().signal)
+    const system = `You are the "${judge.role.label ?? judge.role.id}" live-observer role in a multi-model coding fleet. You judge whether the worker is serving the task RIGHT NOW.\n${judge.role.instructions}`
+    const user = [
+      'Task:',
+      task,
+      '',
+      'Recent activity window:',
+      window,
+      '',
+      'Reply with ONLY a JSON object: {"verdict": "pass" | "fix", "feedback": "..."}',
+    ].join('\n')
+    const stream = prepared.stream({
+      ...judge.route,
+      messages: [createUserMessage({ content: [{ type: 'text', text: user }], source: { kind: 'user' } })],
+      system,
+      signal: new AbortController().signal,
+    })
+    let text = ''
+    for await (const chunk of stream) {
+      if (chunk.type === 'text-delta') text += chunk.text
+    }
+    const parsed = parseReview(text)
+    session.append('fleet/review', {
+      id: runId,
+      role: judge.role.id,
+      verdict: parsed.verdict,
+      feedback: parsed.feedback,
+      chars: text.length,
+      kind: 'observer',
+    })
+    if (parsed.verdict === 'fix') {
+      const message = createUserMessage({
+        content: [{ type: 'text', text: parsed.feedback }],
+        source: {
+          kind: 'plugin',
+          plugin: 'codewhale-fleet',
+          form: 'notice',
+          summary: `Fleet observer ${judge.role.id}: live judge asks for a change`,
+        },
+      })
+      if (!state.cancelledOnce) {
+        state.cancelledOnce = true
+        agent.steer(message)
+      }
+      session.append('fleet/end', { id: runId, reason: 'observer-triggered' })
+    }
+  }
+
   ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
     if (signal.aborted) return
     const step = latestStep(agent.session.events)
@@ -695,8 +854,25 @@ export function apply(ctx: Context, config: Config): void {
           const run = activeFleetRun(session.events)
           if (run === undefined) continue
           const verdict = evaluateObserver(state, cfg, now, run.id, tickRoles)
-          if (verdict === undefined) continue
-          observerIntervene(session, agent, state, verdict)
+          if (verdict !== undefined) {
+            observerIntervene(session, agent, state, verdict)
+            continue
+          }
+          // No deterministic rule tripped: let each LLM judge pass over the
+          // live window on its own interval. A slow judge never queues — the
+          // `judging` flag drops an in-flight interval — and a fix verdict
+          // closes the run observer-triggered.
+          if (state.judging || judgeRoles.length === 0) continue
+          const dueJudge = judgeRoles.find((j) => {
+            const last = state.judgeAt.get(j.role.id) ?? 0
+            return now - last >= (cfg.judgeIntervalMs ?? cfg.tickMs ?? 1000)
+          })
+          if (dueJudge === undefined) continue
+          state.judging = true
+          void judgeRun(dueJudge, agent, session, run.id, state).finally(() => {
+            state.judgeAt.set(dueJudge.role.id, Date.now())
+            state.judging = false
+          })
         }
       }, Math.max(10, cfg.tickMs ?? 1000))
       yield () => { clearInterval(timer) }

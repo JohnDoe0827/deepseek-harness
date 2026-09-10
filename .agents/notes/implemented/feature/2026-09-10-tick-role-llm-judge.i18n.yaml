@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-tick-role-llm-judge.md
+2026-09-10-tick-role-llm-judge.md: f76ed6767e590e06ad05a1bad545bf357e9b11fd
+2026-09-10-tick-role-llm-judge.zh.md: 61104b317da8c43ff17bff40c17a3ce09fa499dc

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/codewhale/fleet/README.md
-README.md: cf6e0c90961a6c3533dd01b5e324baf39082008c
-README.zh.md: 23873a06caed40e85df1a5f289c90a8dab31386f
+README.md: a656a481fe6b4ab782645ebb1e2a8e983b63a32c
+README.zh.md: b02c627f5192b2a29f27c43e80708c53631ffbdf

@@ -241,6 +241,9 @@
         maxResultChars: 16384
         nodeMode: workspace
 
+    - id: rheostat
+      name: '@deepseek-ai/dsh-rheostat'
+
 # ── remaining model-facing rows ─────────────────────────────────────────────
 
 - id: tool-ask-user

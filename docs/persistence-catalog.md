@@ -389,6 +389,44 @@ Types: [ContentBlock](subsystems/core.md) · [TokenUsage](subsystems/llm-streami
 
 Source: [`packages/compaction/compaction/src/types.ts:33`](../packages/compaction/compaction/src/types.ts)
 
+### `context/*`
+
+<a id="contexthandoff--log-only"></a>
+
+#### `context/handoff` — log-only
+
+```ts persistence-catalog
+/**
+ * One context-bloat handoff notice. `target` names the routed model,
+ * `totalTokens`/`contextWindow`/`thresholdTokens` the measured pressure
+ * and its boundary, `ratio` the configured fraction, `reason` the
+ * readable boundary fact, `cycle` the handoff generation, and the path
+ * fields (`backupDir`, `bundlePath`, `tarballPath`, `jsonlPath`,
+ * `notePath`) the artifacts the plugin wrote. `error` carries a backup
+ * failure when one occurred. This event is the record of the reminder the
+ * agent received.
+ */
+'context/handoff': ContextHandoffNoticeData
+```
+
+Source: [`packages/guard/context-handoff/src/index.ts:166`](../packages/guard/context-handoff/src/index.ts)
+
+<a id="contextscrub--log-only"></a>
+
+#### `context/scrub` — log-only
+
+```ts persistence-catalog
+/**
+ * One RAID-style scrub result: `checked` bundles verified healthy, `dropped`
+ * corrupt generations that were removed so the retention rewinds to the
+ * last healthy copy, and `reason` the finding. The log records the scrub's
+ * verdict, not just the scrub's claim.
+ */
+'context/scrub': { checked: number; dropped: number; reason: string }
+```
+
+Source: [`packages/guard/context-handoff/src/index.ts:173`](../packages/guard/context-handoff/src/index.ts)
+
 ### `feedback/*`
 
 <a id="feedbackrecord--log-only"></a>
@@ -414,12 +452,13 @@ Source: [`packages/feedback/command-feedback/src/index.ts:62`](../packages/feedb
 ```ts persistence-catalog
 /**
  * A fleet run closed: `clean` when every reviewer passed a round,
- * `fixes-exhausted` when `Config.maxRounds` review rounds produced fixes.
+ * `fixes-exhausted` when `Config.maxRounds` review rounds produced fixes,
+ * `observer-triggered` when a tick observer cancelled the agent.
  */
-'fleet/end': { id: string; reason: 'clean' | 'fixes-exhausted' }
+'fleet/end': { id: string; reason: 'clean' | 'fixes-exhausted' | 'observer-triggered' }
 ```
 
-Source: [`packages/codewhale/fleet/src/index.ts:94`](../packages/codewhale/fleet/src/index.ts)
+Source: [`packages/codewhale/fleet/src/index.ts:139`](../packages/codewhale/fleet/src/index.ts)
 
 <a id="fleetreview--log-only"></a>
 
@@ -427,15 +466,24 @@ Source: [`packages/codewhale/fleet/src/index.ts:94`](../packages/codewhale/fleet
 
 ```ts persistence-catalog
 /**
- * One reviewer role completed one pass over the latest turn. `verdict`
- * is the reviewer's structured conclusion; `feedback` is its text
- * (empty only for a `pass` with no notes); `chars` is the raw reviewer
- * output length.
+ * One fleet role completed one pass. For a `turn-stopping` reviewer
+ * (`kind` absent), `verdict` is the reviewer's structured conclusion and
+ * `feedback` its text. For a `tick` observer (`kind: 'observer'`),
+ * `verdict` is the deterministic rule outcome (`pass` = no rule tripped,
+ * `fix` = a budget rule tripped), `feedback` the delivered reminder, and
+ * `chars` the reason text length.
  */
-'fleet/review': { id: string; role: string; verdict: 'pass' | 'fix'; feedback: string; chars: number }
+'fleet/review': {
+  id: string
+  role: string
+  verdict: 'pass' | 'fix'
+  feedback: string
+  chars: number
+  kind?: 'observer'
+}
 ```
 
-Source: [`packages/codewhale/fleet/src/index.ts:89`](../packages/codewhale/fleet/src/index.ts)
+Source: [`packages/codewhale/fleet/src/index.ts:126`](../packages/codewhale/fleet/src/index.ts)
 
 <a id="fleetrun--log-only"></a>
 
@@ -449,7 +497,7 @@ Source: [`packages/codewhale/fleet/src/index.ts:89`](../packages/codewhale/fleet
 'fleet/run': { id: string; roles: number }
 ```
 
-Source: [`packages/codewhale/fleet/src/index.ts:82`](../packages/codewhale/fleet/src/index.ts)
+Source: [`packages/codewhale/fleet/src/index.ts:117`](../packages/codewhale/fleet/src/index.ts)
 
 ### `goal/*`
 
@@ -539,6 +587,25 @@ Source: [`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/
 ```
 
 Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
+
+### `observer/*`
+
+<a id="observernotice--log-only"></a>
+
+#### `observer/notice` — log-only
+
+```ts persistence-catalog
+/**
+ * One observer intervention. `rule` names the fired rule, `level` the
+ * escalated strength (1 inject / 2 steer / 3 cancel), `reason` the
+ * observed facts that fired it, and `text` the message actually delivered
+ * to the agent (inject or steer content; empty for a cancel). The
+ * delivered text must be reconstructable from this event.
+ */
+'observer/notice': ObserverNoticeData
+```
+
+Source: [`packages/guard/observer/src/index.ts:111`](../packages/guard/observer/src/index.ts)
 
 ### `permission/*`
 

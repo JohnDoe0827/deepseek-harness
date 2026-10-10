@@ -38,3 +38,20 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# Local session dumps, backups, and scratch exports (never source).
+/backups/
+/.tmp/
+/.landing-staging/
+/.t1codewhale/
+/.codex/
+/dsh-session-session-*/
+/dsh-session-session-*.zip
+/c1
+/fix[0-9]*
+/n2
+/n3
+/neterr
+/op[0-9]*
+/t[0-9]*
+/tu[0-9]*

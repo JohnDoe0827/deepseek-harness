@@ -352,6 +352,9 @@
 - id: tool-goal
   disabled: true
 
+- id: rheostat
+  disabled: true
+
 - id: plan-mode
   disabled: true
 

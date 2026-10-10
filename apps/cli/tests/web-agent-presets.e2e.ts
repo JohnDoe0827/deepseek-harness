@@ -205,7 +205,7 @@ describe('the shipped Web composition', () => {
       // depend on ripgrep being present on the machine.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
         'ask_user_question', 'bash', 'create_goal', 'edit', 'evolve', 'exit_plan_mode',
-        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
+        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'rheostat_get', 'rheostat_set', 'send_message', 'skill',
         'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
         'workflow', 'write',
       ])
@@ -795,7 +795,7 @@ describe('the default preset as a user setting', () => {
       try {
         // `mount()` with no id resolves the effective default. Two tools, not
         // `standard`'s catalog: the setting decided the composition.
-        expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+        expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'rheostat_get', 'rheostat_set', 'str_replace_editor'])
       } finally {
         await handle.dispose()
       }

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-opencode-go-provider.md
-2026-08-14-opencode-go-provider.md: 4c93b5d951e236e40a5adda42c0e8532ddcfae4e
-2026-08-14-opencode-go-provider.zh.md: 08bb700802ad54e62dbc8ea1193cc8c59b95aa55
+2026-08-14-opencode-go-provider.md: c018ff0ae2de1629885f7524584ff797fea69409
+2026-08-14-opencode-go-provider.zh.md: 4a9b758ea766965990f220d9148fa556b70cb4ad

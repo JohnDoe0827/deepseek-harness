@@ -10,7 +10,7 @@ The plugin registers one provider route (`opencode-go`, display name "OpenCode G
 
 The adapter's requests always connect directly over an HTTP/2-first transport: got negotiates HTTP/2 and falls back to HTTP/1.1 automatically (the same transport shape as the OpenCode client), and never reads environment proxies, so OpenCode Go traffic always leaves from the machine's real origin. The endpoint's regional gating — the China-hosted deepseek opt-in — keys off the request origin, and a proxied exit from an overseas IP silently flips that state, so this route is deliberately exempt from any proxy the host configures. Other providers and the harness's own web tools keep their ambient transport.
 
-The adapter is text-only (`UNSUPPORTED_CONTENT` for image blocks) and does not declare a reasoning-effort ladder: the OpenAI-compatible surface does not document a stable effort vocabulary, so an explicit `reasoningEffort` fails with `UNSUPPORTED_REASONING_EFFORT` instead of being silently dropped. The advisory model catalog defaults to the Go subscription's coding lineup (`deepseek-v4-flash`, `deepseek-v4-pro`, `kimi-k3`, `qwen3.6-plus`) and is overridable through `models`.
+The adapter is text-only (`UNSUPPORTED_CONTENT` for image blocks) and does not declare a reasoning-effort ladder: the OpenAI-compatible surface does not document a stable effort vocabulary, so an explicit `reasoningEffort` fails with `UNSUPPORTED_REASONING_EFFORT` instead of being silently dropped. The advisory model catalog defaults to the full OpenCode Go support list (73 models — DeepSeek V4.1 Flash, Claude, Gemini, GPT, Grok, Kimi, GLM, Qwen, MiniMax, and the `-free` community lanes — see the `Catalog` section in this README) and is overridable through `models`.
 
 ## Model Experience
 
@@ -26,7 +26,11 @@ Zero direct tokens; the request is the conversation itself. Usage reported by th
 
 #### KV Cache effect
 
-Independent: a `llm-opencode-go:` settings edit changes the request prefix only when it changes the endpoint or model; the provider's own cache behavior applies to repeated requests.
+Provider-keyed per conversation: OpenCode Go requires the `x-opencode-session` header on every request and reuses prompt-cache state under the stable id it carries, so the adapter sends the conversation's session id (a fresh UUID when a hand-built request has none) and repeated requests of one conversation benefit from the provider's cache. A `llm-opencode-go:` settings edit changes the request prefix only when it changes the endpoint or model.
+
+## Catalog
+
+The default advisory catalog is the full OpenCode Go model list the subscription serves: 73 entries across DeepSeek (V4.1 Flash, V4 Flash, V4 Flash Vision Exp, V4 Pro), Anthropic Claude (Fable, Haiku, Opus, Sonnet), Google Gemini, OpenAI GPT, xAI Grok, Kimi, GLM, Qwen, MiniMax, MiMo, Muse Spark, Jev, Ling, and Nemotron — including the `-free` community lanes. Each entry uses the same 1,000,000-token `defaultContextWindow`; per-model capacities and output caps are not part of the delivered list. Reference pricing (USD per million tokens, input / output / cache-read / cache-write) for each model is carried by the subscription's published price table, not by this catalog — the harness meters tokens, not currency.
 
 ## Known Limitations and Deferred Work
 

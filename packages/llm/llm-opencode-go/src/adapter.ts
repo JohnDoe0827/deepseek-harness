@@ -28,6 +28,7 @@ import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { EventSourceParserStream } from 'eventsource-parser/stream'
 import { got } from 'got'
 import type { Response as GotResponse } from 'got'
+import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { serializeRequest } from './serialize.ts'
 import { DONE, translate } from './translate.ts'
@@ -117,6 +118,21 @@ function providerRetryAfterMs(value: string | null): number | undefined {
 function headerValue(headers: GotResponse['headers'], name: string): string | undefined {
   const value = headers[name]
   return value === undefined ? undefined : Array.isArray(value) ? value[0] : value
+}
+
+/**
+ * `x-opencode-session` value for one request. OpenCode Go requires the header
+ * on every request and keys routing and prompt-cache optimization off a stable
+ * per-conversation id (see the Agent Note
+ * `2026-09-07-x-opencode-session-required-header`). The harness conversation's
+ * session id is that stable id; a request outside a harness conversation
+ * (no session id) carries a fresh UUID so the required header is always
+ * present without inventing cross-request identity.
+ * @param sessionId - the request's harness session id, when it has one.
+ * @returns the header value.
+ */
+function sessionHeader(sessionId: GenerateOptions['sessionId']): string {
+  return sessionId ?? randomUUID()
 }
 
 function requestId(headers: GotResponse['headers']): ReturnType<typeof ProviderRequestId> | undefined {
@@ -266,6 +282,7 @@ export class OpenCodeGoAdapter extends LlmAdapter {
       'authorization': `Bearer ${apiKey}`,
       'content-type': 'application/json',
       'accept': 'text/event-stream',
+      'x-opencode-session': sessionHeader(options.sessionId),
       ...attributionHeaders(),
     }
 

@@ -14,7 +14,7 @@ OpenCode Go（OpenCode Zen Go 订阅）在 `https://opencode.ai/zen/go/v1` 的 O
 
 **适配器只服务 OpenAI 兼容表面，且仅文本。** wire 映射是 OpenAI chat-completions 协议（system/user/assistant/tool 消息、带 `include_usage` 的流式、标准 delta 词汇含 `reasoning_content`）。适配器不声明推理档阶梯并拒绝图片块：该表面既没有文档化的稳定 effort 词汇也没有多模态输入，因此显式 `reasoningEffort` 以 `UNSUPPORTED_REASONING_EFFORT` 失败、图片内容以 `UNSUPPORTED_CONTENT` 失败，而不是被静默丢弃。
 
-**咨询目录默认是 Go 订阅的编码阵容**（`deepseek-v4-flash`、`deepseek-v4-pro`、`kimi-k3`、`qwen3.6-plus`），可通过 `models` 覆盖；请求保持不受限制。
+**咨询目录是 OpenCode Go 的完整支持清单**（73 条，覆盖 DeepSeek、Claude、Gemini、GPT、Grok、Kimi、GLM、Qwen、MiniMax、MiMo、Muse Spark、Jev、Ling、Nemotron，含 `-free` 社区通道），可通过 `models` 覆盖；请求保持不受限制。
 
 ## 曾考虑的替代方案
 

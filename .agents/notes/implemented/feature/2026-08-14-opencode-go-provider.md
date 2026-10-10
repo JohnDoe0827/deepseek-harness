@@ -14,7 +14,7 @@ OpenCode Go (the OpenCode Zen Go subscription) serves its coding lineup — Deep
 
 **The adapter serves the OpenAI-compatible surface only, as text.** The wire mapping is the OpenAI chat-completions protocol (system/user/assistant/tool messages, streaming with `include_usage`, standard delta vocabulary including `reasoning_content`). The adapter declares no reasoning-effort ladder and rejects image blocks: the surface documents neither a stable effort vocabulary nor multimodal input, so explicit `reasoningEffort` fails with `UNSUPPORTED_REASONING_EFFORT` and image content with `UNSUPPORTED_CONTENT` instead of being silently dropped.
 
-**The advisory catalog defaults to the Go subscription's coding lineup** (`deepseek-v4-flash`, `deepseek-v4-pro`, `kimi-k3`, `qwen3.6-plus`), overridable through `models`; requests remain unrestricted.
+**The advisory catalog is the full OpenCode Go support list** (73 models across DeepSeek, Claude, Gemini, GPT, Grok, Kimi, GLM, Qwen, MiniMax, MiMo, Muse Spark, Jev, Ling, and Nemotron, including the `-free` community lanes), overridable through `models`; requests remain unrestricted.
 
 ## Alternatives considered
 

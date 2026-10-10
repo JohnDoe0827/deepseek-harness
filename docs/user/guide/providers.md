@@ -16,7 +16,7 @@ Keys are write-only. The page receives a redacted descriptor after saving, never
 
 Choose **Add provider**, select a provider such as Anthropic or OpenAI, enter its API key, and save. The installed catalog supplies the endpoint, protocol, and model list.
 
-**OpenCode Go** (the OpenCode Zen Go subscription) is one of the catalog providers: it serves its coding lineup (`opencode-go/*` models such as `deepseek-v4-flash`, `kimi-k3`, and `qwen3.6-plus`) on an OpenAI-compatible endpoint. The card's key is stored under the `OPENCODE_GO_API_KEY` credential reference by default; a user-settings `llm-opencode-go:` section can rename the reference, point the endpoint at another base URL, or narrow the model catalog, and the change reaches the next request without a restart.
+**OpenCode Go** (the OpenCode Zen Go subscription) is one of the catalog providers: it serves its full model list (73 models — DeepSeek V4.1 Flash, Claude, Gemini, GPT, Grok, Kimi, GLM, Qwen, MiniMax, and the `-free` community lanes) on an OpenAI-compatible endpoint. The card's key is stored under the `OPENCODE_GO_API_KEY` credential reference by default; a user-settings `llm-opencode-go:` section can rename the reference, point the endpoint at another base URL, or narrow the model catalog, and the change reaches the next request without a restart.
 
 Providers with native authentication need their native credentials instead. Bedrock, Vertex, Azure, and Codex use AWS credentials and a region, an ADC project, an `api-version`, and OAuth respectively; filling only the API-key field does not configure them.
 

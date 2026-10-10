@@ -16,7 +16,7 @@
 
 选择**添加提供方**，选取 Anthropic 或 OpenAI 等提供方，输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
 
-**OpenCode Go**（OpenCode Zen Go 订阅）就是目录提供方之一：它在 OpenAI 兼容端点上服务其编码阵容（`opencode-go/*` 模型，如 `deepseek-v4-flash`、`kimi-k3`、`qwen3.6-plus`）。该卡片的密钥默认存到 `OPENCODE_GO_API_KEY` 凭据引用；用户设置的 `llm-opencode-go:` 分节可以改名引用、把端点指向其他 base URL 或收窄模型目录，变更无需重启即到达下一次请求。
+**OpenCode Go**（OpenCode Zen Go 订阅）就是目录提供方之一：它在 OpenAI 兼容端点上服务其完整模型清单（73 条——DeepSeek V4.1 Flash、Claude、Gemini、GPT、Grok、Kimi、GLM、Qwen、MiniMax，及 `-free` 社区通道）。该卡片的密钥默认存到 `OPENCODE_GO_API_KEY` 凭据引用；用户设置的 `llm-opencode-go:` 分节可以改名引用、把端点指向其他 base URL 或收窄模型目录，变更无需重启即到达下一次请求。
 
 使用原生认证的提供方需要各自的原生凭据。Bedrock、Vertex、Azure 和 Codex 分别使用 AWS 凭据与区域、ADC 项目、`api-version` 和 OAuth；只填写 API 密钥字段无法完成配置。
 

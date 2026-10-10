@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import LlmRuntime, { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { LlmError } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmError } from '@deepseek-ai/dsh-llm'
 import * as LlmOpenCodeGo from '@deepseek-ai/dsh-llm-opencode-go'
 import { OpenCodeGoAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-opencode-go'
 import { got } from 'got'
@@ -34,6 +34,7 @@ function adapterOf(config: Partial<LlmOpenCodeGo.Config> & { apiKey?: string } =
 }
 
 const MESSAGES = [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })]
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 describe('OpenCodeGoAdapter against a mock server', () => {
   it('streams a text generation end to end through the assembler', async () => {
@@ -49,6 +50,30 @@ describe('OpenCodeGoAdapter against a mock server', () => {
     expect(request.stream).toBe(true)
     expect(request.messages.at(-1)).toEqual({ role: 'user', content: 'hi' })
     expect(server.headers[0]?.authorization).toBe('Bearer test-key')
+  }, 30_000)
+
+  it('sends the conversation session id as the x-opencode-session header', async () => {
+    // OpenCode Go keys routing and prompt-cache optimization off a stable
+    // per-conversation id and errors on requests without the header, so the
+    // harness session id — stable across the whole conversation, resumes
+    // included — rides every request of that conversation.
+    const server = await mockServer([{ kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url)
+    const sessionId = 'main-session-3f0c4a9e-1e0f-4d5a-9c2b-6b0d4f7a8c21' as NonNullable<GenerateOptions['sessionId']>
+    await assemble(ctx, { model: 'kimi-k3', messages: MESSAGES, sessionId })
+    await assemble(ctx, { model: 'kimi-k3', messages: MESSAGES, sessionId })
+    expect(server.headers[0]?.['x-opencode-session']).toBe(sessionId)
+    expect(server.headers[1]?.['x-opencode-session']).toBe(sessionId)
+  }, 30_000)
+
+  it('sends a UUID x-opencode-session header even without a session id', async () => {
+    // The header is required on every request, so a sessionless (hand-built,
+    // out-of-loop) request still carries one — a fresh UUID that claims no
+    // cross-request conversation identity.
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, { model: 'kimi-k3', messages: MESSAGES })
+    expect(server.headers[0]?.['x-opencode-session']).toMatch(UUID_RE)
   }, 30_000)
 
   it('streams tool calls as interleaved deltas', async () => {
@@ -166,8 +191,26 @@ describe('resolveAdapterOptions', () => {
     const options = resolveAdapterOptions({})
     expect(options.baseURL).toBe('https://opencode.ai/zen/go/v1')
     expect(String(options.apiKeyEnv)).toBe('OPENCODE_GO_API_KEY')
+    expect(options.models.map(model => model.id)).toContain('deepseek-v4.1-flash')
+    expect(options.models).toHaveLength(73)
     expect(options.models.map(model => model.id)).toEqual([
-      'deepseek-v4-flash', 'deepseek-v4-pro', 'kimi-k3', 'qwen3.6-plus',
+      'big-pickle', 'claude-fable-5', 'claude-fable-5-1', 'claude-haiku-4-5', 'claude-opus-4-5',
+      'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5',
+      'claude-sonnet-4', 'claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-sonnet-5',
+      'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-v4-pro', 'deepseek-v4.1-flash',
+      'gemini-3-flash', 'gemini-3.1-pro', 'gemini-3.5-flash', 'gemini-3.5-flash-lite',
+      'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash',
+      'glm-5', 'glm-5.1', 'glm-5.2', 'glm-5.3', 'glm-5.3-flash',
+      'gpt-5', 'gpt-5-codex', 'gpt-5-nano', 'gpt-5.1', 'gpt-5.1-codex', 'gpt-5.1-codex-max',
+      'gpt-5.1-codex-mini', 'gpt-5.2', 'gpt-5.2-codex', 'gpt-5.3-codex', 'gpt-5.3-codex-spark',
+      'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.4-pro', 'gpt-5.5', 'gpt-5.5-pro',
+      'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-6-astra',
+      'grok-4.5', 'grok-4.6', 'grok-build-0.1',
+      'jev-1.13', 'jev-1.13-free', 'kimi-k2.5', 'kimi-k2.6', 'kimi-k2.7-code', 'kimi-k3',
+      'ling-3.0-flash-fin-free', 'mimo-v2.6-flash-free', 'minimax-m2.5', 'minimax-m2.7', 'minimax-m3',
+      'muse-spark-1.2', 'muse-spark-1.2-contributor-free', 'muse-spark-1.3', 'muse-spark-1.3-contributor-free',
+      'nemotron-3-ultra-free', 'nemotron-3.5-lightning-free',
+      'qwen3.5-plus', 'qwen3.6-plus', 'qwen3.8-flash',
     ])
   })
 

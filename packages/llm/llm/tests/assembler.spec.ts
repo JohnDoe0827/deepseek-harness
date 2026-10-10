@@ -110,6 +110,22 @@ describe('BlockAssembler', () => {
     ])
   })
 
+  it('keeps the first-frame tool-call id/name when later deltas and block-end repeat empty placeholders', () => {
+    // Some gateways echo null/empty id and name on every argument fragment
+    // instead of omitting them; the assembler must not let those overwrite
+    // the identity captured on the first frame, or the final call surfaces
+    // as `unknown tool ""` and the model retries it forever.
+    const assembler = new BlockAssembler()
+    assembler.push({ type: 'block-start', index: 0, blockType: 'tool-call' })
+    assembler.push({ type: 'tool-call-delta', index: 0, id: CallId('call-1'), name: 'echo', argumentsDelta: '{"text":' })
+    assembler.push({ type: 'tool-call-delta', index: 0, id: CallId(''), argumentsDelta: '"hi"}' })
+    assembler.push({ type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId(''), name: '', arguments: '{"text":"hi"}' } })
+
+    expect(assembler.blocks()).toEqual([
+      { type: 'tool-call', id: CallId('call-1'), name: 'echo', arguments: '{"text":"hi"}' },
+    ])
+  })
+
   it('exposes usage via the getter when a usage chunk was received', () => {
     const assembler = new BlockAssembler()
     assembler.push({ type: 'text-delta', index: 0, text: 'msg' })

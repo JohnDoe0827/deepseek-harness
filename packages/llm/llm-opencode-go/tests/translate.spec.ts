@@ -11,6 +11,28 @@ async function collect(payloads: string[]): Promise<unknown[]> {
   return chunks
 }
 
+describe('translate tool-call identity', () => {
+  it('keeps the first-frame id/name when later argument fragments echo empty placeholders', async () => {
+    // Some gateways (observed: OpenCode Go) send id/name on the first
+    // tool_calls frame and then null/empty placeholders on argument
+    // fragments, instead of omitting the fields as the streaming spec does.
+    const chunks = await collect([
+      '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"read_file","arguments":""}}]}}]}',
+      '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":null,"arguments":"{\\"path\\":"}}]}}]}',
+      '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"","function":{"name":"","arguments":"\\"a.txt\\"}"}}]},"finish_reason":"tool_calls"}]}',
+      '[DONE]',
+    ])
+    expect(chunks).toEqual([
+      { type: 'block-start', index: 0, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index: 0, id: 'c1', name: 'read_file', argumentsDelta: '' },
+      { type: 'tool-call-delta', index: 0, id: 'c1', name: 'read_file', argumentsDelta: '{"path":' },
+      { type: 'tool-call-delta', index: 0, id: 'c1', name: 'read_file', argumentsDelta: '"a.txt"}' },
+      { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'c1', name: 'read_file', arguments: '{"path":"a.txt"}' } },
+      { type: 'finish', reason: { kind: 'tool-calls' } },
+    ])
+  })
+})
+
 describe('translate', () => {
   it('assembles a text generation with usage and a stop finish', async () => {
     const chunks = await collect([

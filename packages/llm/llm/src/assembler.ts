@@ -67,7 +67,12 @@ export class BlockAssembler {
       case 'tool-call-delta': {
         const partial = this.ensure(chunk.index, 'tool-call')
         if (partial.block) return // closed by block-end; ignore stragglers
-        partial.toolCallId = chunk.id
+        // First frame carries the call id; later argument fragments may
+        // repeat it, omit it, or (on some gateways) explicitly send an empty
+        // placeholder. Never let an empty id overwrite the captured one:
+        // a nameless tool call surfaces as `unknown tool ""` and the model
+        // retries it forever.
+        if (chunk.id && chunk.id.length > 0) partial.toolCallId = chunk.id
         if (chunk.name) partial.toolCallName = chunk.name
         partial.toolCallArguments += chunk.argumentsDelta
         return
@@ -77,7 +82,18 @@ export class BlockAssembler {
         // First close wins; ignoring re-close stragglers keeps streamed output
         // and the final assembled block in agreement.
         if (partial.block) return
-        partial.block = chunk.block
+        if (chunk.block.type === 'tool-call') {
+          // A provider may close a tool-call with an empty id/name when its
+          // stream never carried them. Keep the values the deltas captured so
+          // the assembled call stays addressable (same gate as the delta path).
+          partial.block = {
+            ...chunk.block,
+            id: chunk.block.id.length > 0 ? chunk.block.id : partial.toolCallId ?? CallId(`call-${chunk.index}`),
+            name: chunk.block.name !== '' ? chunk.block.name : partial.toolCallName ?? '',
+          }
+        } else {
+          partial.block = chunk.block
+        }
         return
       }
       case 'usage': {

@@ -121,8 +121,14 @@ function* applyDelta(
       blocks.byWireIndex.set(wireIndex, block)
       yield { type: 'block-start', index: block.index, blockType: 'tool-call' }
     }
-    if (call.id !== undefined) block.callId = call.id
-    if (call.function?.name !== undefined) block.name = call.function.name
+    // Only a non-empty id/name advances the block: compliant streams put
+    // id/name on the first tool-call frame and leave them off argument
+    // fragments, but some gateways explicitly emit null/empty placeholders on
+    // later fragments. Overwriting the captured first-frame values there
+    // produces a nameless call that the harness rejects with `unknown tool ""`
+    // and the model retries forever.
+    if (typeof call.id === 'string' && call.id.length > 0) block.callId = call.id
+    if (typeof call.function?.name === 'string' && call.function.name.length > 0) block.name = call.function.name
     const fragment = call.function?.arguments ?? ''
     block.text += fragment
     yield {

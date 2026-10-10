@@ -123,6 +123,34 @@ describe('translate: tool calls', () => {
     ])
   })
 
+  it('keeps the first-frame id/name when later argument fragments echo empty placeholders', async () => {
+    // Some gateways echo null/empty id and name on every argument fragment
+    // instead of omitting them; the translation must not overwrite the
+    // identity captured on the first frame, or the final call surfaces as
+    // `unknown tool ""` and the model retries it forever.
+    const chunks = await collect(translate(feed(
+      firstChunk,
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_00_x', type: 'function', function: { name: 'get_weather', arguments: '' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: null, function: { name: null, arguments: '{"city"' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: '', function: { name: '', arguments: ': "Paris"}' } }] } }] },
+      { choices: [{ delta: { content: '' }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 28, completion_tokens: 6 } },
+      DONE,
+    )))
+    expect(chunks).toEqual([
+      { type: 'block-start', index: 0, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: '' },
+      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: '{"city"' },
+      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: ': "Paris"}' },
+      {
+        type: 'block-end',
+        index: 0,
+        block: { type: 'tool-call', id: 'call_00_x', name: 'get_weather', arguments: '{"city": "Paris"}' },
+      },
+      { type: 'usage', usage: { inputTokens: 28, outputTokens: 6 } },
+      { type: 'finish', reason: { kind: 'tool-calls' } },
+    ])
+  })
+
   it('disambiguates parallel tool calls by wire index', async () => {
     const chunks = await collect(translate(feed(
       firstChunk,

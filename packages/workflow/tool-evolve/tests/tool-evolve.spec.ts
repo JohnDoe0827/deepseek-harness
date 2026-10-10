@@ -181,7 +181,7 @@ describe('dsh-tool-evolve', () => {
       node: COMPLETE_NODE,
     })
     expect(result.isError).toBe(false)
-    if (result.isError) throw new Error(`evolve failed: ${JSON.stringify(result.error ?? result.content)}`)
+    if (result.isError) throw new Error(`evolve failed: ${JSON.stringify(result.error)}`)
     expect((result.value as { runId: string }).runId).toMatch(/^evolve-1$/)
     expect((result.value as { result: { status: string } }).result.status).toBe('complete')
     expect((result.value as { result: { node: { summary: string } } }).result.node.summary).toContain('formed')

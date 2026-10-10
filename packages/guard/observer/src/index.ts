@@ -353,15 +353,18 @@ export function apply(ctx: Context, config: Config): void {
           state.repeatKey = key
           return
         }
-        case 'context/handoff': {
-          // The context-bloat handoff flow owns the session's termination
-          // from here: back up, write the handoff note, prompt the fresh
-          // session. The observer cedes further intervention so it cannot
-          // cancel or steer a session the user chose to hand off verbatim.
-          state.handoffRequested = true
-          return
-        }
         default:
+          // `context/handoff` is declared by the context-handoff plugin, which
+          // this package's program does not include, so the merge-extensible
+          // event is matched here instead of a closed case label. The
+          // context-bloat handoff flow owns the session's termination from
+          // here: back up, write the handoff note, prompt the fresh session.
+          // The observer cedes further intervention so it cannot cancel or
+          // steer a session the user chose to hand off verbatim.
+          if ((event.type as string) === 'context/handoff') {
+            state.handoffRequested = true
+            return
+          }
           if (isProgressEvent(event)) state.lastProgressAt = now()
           return
       }

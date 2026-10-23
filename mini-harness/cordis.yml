@@ -1,0 +1,8 @@
+- name: './src/tools.ts'
+- name: './src/scripted-llm.ts'
+- name: './src/builtins.ts'
+# This row is the model. Point it at another plugin that provides `llm`.
+- name: './src/agent.ts'
+  config:
+    maxSteps: 4
+- name: './src/cli.ts'

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-23-minimal-cordis-harness.md
-2026-10-23-minimal-cordis-harness.md: 9a52bf9a92a4f1fb85c883aea194e79101040a41
-2026-10-23-minimal-cordis-harness.zh.md: cebe3f6d1c019cbcf2852d0047bd3f6f32c263a1
+2026-10-23-minimal-cordis-harness.md: b5b6cee53c512faa8093935d7a2aac06b13dd7f4
+2026-10-23-minimal-cordis-harness.zh.md: 3cdca2f04363497ba7b1aaef63e63132f84ba6c9

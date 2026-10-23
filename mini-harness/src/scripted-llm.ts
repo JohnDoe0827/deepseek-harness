@@ -26,11 +26,12 @@ class ScriptedLlm extends Service {
   /**
    * Produce the next assistant step.
    *
-   * @param messages — the dialogue so far, oldest first.
+   * @param messages — history projected from the session log, oldest first.
    * @param tools — definitions the model may call.
+   * @param _system — system prompt text recorded in the log for this step.
    * @returns text, or one tool call.
    */
-  complete(messages: readonly LlmMessage[], tools: readonly ToolDefinition[]): LlmResult {
+  complete(messages: readonly LlmMessage[], tools: readonly ToolDefinition[], _system: string): LlmResult {
     const last = messages.at(-1)
     if (last === undefined) return { text: '', toolCalls: [] }
     switch (last.role) {

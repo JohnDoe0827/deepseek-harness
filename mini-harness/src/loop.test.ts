@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url'
 import * as agent from './agent.ts'
 import * as builtins from './builtins.ts'
 import * as llm from './scripted-llm.ts'
+import * as policy from './policy.ts'
+import * as prompt from './prompt.ts'
+import * as session from './session.ts'
+import * as systemPrompt from './system-prompt.ts'
 import * as tools from './tools.ts'
 
 /** Mount one sample plugin the way the loader mounts its module object. */
@@ -17,10 +21,14 @@ function pluginOf(mod: Plugin.Object): Plugin.Object {
 }
 
 /** Boot the loop in process. `withTools` omits `add` and `echo` when false. */
-async function boot(maxSteps: number, withTools: boolean) {
+async function boot(maxSteps: number, withTools: boolean, deny: readonly string[] = []) {
   const ctx = new Context()
+  await ctx.plugin(pluginOf(session))
+  await ctx.plugin(pluginOf(systemPrompt))
   await ctx.plugin(pluginOf(tools))
+  await ctx.plugin(pluginOf(prompt))
   await ctx.plugin(pluginOf(llm))
+  await ctx.plugin(pluginOf(policy), { deny: [...deny] })
   await ctx.plugin(pluginOf(agent), { maxSteps })
   if (withTools) await ctx.plugin(pluginOf(builtins))
   return ctx
@@ -63,6 +71,43 @@ test('maxSteps stops a turn that is still calling tools', async () => {
     throw error
   }
   throw new Error('expected the step limit to reject')
+})
+
+test('the log is the history the model sees', async () => {
+  const ctx = await boot(4, true)
+  const answer = await ctx.agent.run('add 2 and 3')
+  if (answer !== '5') throw new Error(`expected 5, got ${answer}`)
+  const types = ctx.session.log().map(event => event.type)
+  const expected = [
+    'turn/start',
+    'user/message',
+    'system/message',
+    'assistant/message',
+    'tool/call',
+    'tool/result',
+    'assistant/message',
+    'turn/end',
+  ]
+  if (types.join(',') !== expected.join(',')) throw new Error(`log ${types.join(',')}`)
+  if (!ctx.session.systemText().includes('add(a: number, b: number)')) {
+    throw new Error(`system prompt missing tool schema:\n${ctx.session.systemText()}`)
+  }
+  const messages = ctx.session.messages()
+  if (messages.length !== 4) throw new Error(`expected 4 model messages, got ${messages.length}`)
+  const toolMessage = messages[2]
+  if (toolMessage === undefined || toolMessage.role !== 'tool' || toolMessage.content !== '5') {
+    throw new Error(`tool message ${JSON.stringify(toolMessage)}`)
+  }
+})
+
+test('policy can deny a tool without changing the loop', async () => {
+  const ctx = await boot(4, true, ['add'])
+  const answer = await ctx.agent.run('add 2 and 3')
+  if (answer !== 'Denied tool: add') throw new Error(`expected denial, got ${answer}`)
+  const result = ctx.session.log().find(event => event.type === 'tool/result')
+  if (result === undefined || result.type !== 'tool/result' || result.output !== 'Denied tool: add') {
+    throw new Error(`log missed the denial: ${JSON.stringify(result)}`)
+  }
 })
 
 test('unloading the tool plugin removes its tools', async () => {
